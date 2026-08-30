@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The MSRV in Cargo.toml, and whatever is current.
+        rust: ['1.85', stable]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --all --check
+        if: matrix.rust == 'stable'
+
+      - run: cargo clippy --all-features --all-targets -- -D warnings
+        if: matrix.rust == 'stable'
+
+      - run: cargo test --all-features
+
+      # The doctests need every feature; the lib and integration tests have to
+      # build without them too, or a `default-features = false` user is broken.
+      - run: cargo test --no-default-features --features rustls-tls --lib --tests
+
+      - run: cargo build --examples --all-features
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      # Same invocation docs.rs uses, so a broken intra-doc link fails here first.
+      - run: cargo doc --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: --cfg docsrs -D warnings

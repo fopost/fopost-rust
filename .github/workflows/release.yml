@@ -1,0 +1,56 @@
+name: Release
+
+# Tag the commit as v<version> matching Cargo.toml, e.g. v0.1.0.
+# Publishing needs a CARGO_REGISTRY_TOKEN secret on the `crates-io` environment.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Gates publishing behind a dedicated environment, so commit access alone
+    # does not grant the ability to push a release to crates.io.
+    environment:
+      name: crates-io
+      url: https://crates.io/crates/fopost
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Verify tag matches the crate version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          [ "$VERSION" = "$TAG" ] || { echo "::error::Cargo.toml is $VERSION but tag is $TAG"; exit 1; }
+
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-features --all-targets -- -D warnings
+      - run: cargo test --all-features
+
+      # Catches the class of bug where the crate builds here but the packaged
+      # .crate is missing a file and will not build for anyone else.
+      - run: cargo package --all-features
+
+      - name: Publish to crates.io
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: cargo publish --all-features
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
