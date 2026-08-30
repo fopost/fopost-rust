@@ -40,13 +40,28 @@ jobs:
       - run: cargo clippy --all-features --all-targets -- -D warnings
         if: matrix.rust == 'stable'
 
+      # On the MSRV we check what a consumer actually compiles: the library and the
+      # examples. Tests are deliberately not run there — dev-dependencies never reach a
+      # consumer, so their MSRV is not ours to honour, and pinning them to whatever still
+      # builds on 1.85 means chasing every release (wiremock 0.6.5 moved to edition-2024
+      # let-chains, which need 1.88). Stable runs the full suite.
+      - run: cargo check --all-features
+        if: matrix.rust != 'stable'
+
+      - run: cargo check --no-default-features --features rustls-tls
+        if: matrix.rust != 'stable'
+
       - run: cargo test --all-features
+        if: matrix.rust == 'stable'
 
       # The doctests need every feature; the lib and integration tests have to
       # build without them too, or a `default-features = false` user is broken.
       - run: cargo test --no-default-features --features rustls-tls --lib --tests
+        if: matrix.rust == 'stable'
 
+      # Examples can use dev-dependencies, so building them pulls wiremock in too.
       - run: cargo build --examples --all-features
+        if: matrix.rust == 'stable'
 
   docs:
     runs-on: ubuntu-latest
