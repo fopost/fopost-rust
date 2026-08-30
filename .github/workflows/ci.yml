@@ -13,6 +13,12 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      # Resolve dependencies that actually support our rust-version instead of taking the
+      # newest and failing. `url` -> `idna` -> `icu_*` 2.3 declares rustc 1.88, which would
+      # otherwise break the MSRV job on every transitive release. With this, 1.85 gets
+      # icu 2.1 and stable still gets the newest.
+      CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
     strategy:
       fail-fast: false
       matrix:
