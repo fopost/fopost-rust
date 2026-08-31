@@ -42,7 +42,7 @@ async fn a_402_exposes_the_upgrade_url_the_api_suggests() {
         .respond_with(ResponseTemplate::new(402).set_body_json(serde_json::json!({
             "error": "subscription_required",
             "message": "This workspace has no active subscription",
-            "upgrade_url": "https://app.fopost.com/settings/billing"
+            "upgrade_url": "https://fopost.com/dashboard/settings/billing"
         })))
         .mount(&server)
         .await;
@@ -56,7 +56,7 @@ async fn a_402_exposes_the_upgrade_url_the_api_suggests() {
             assert!(api.is_payment_required());
             assert_eq!(
                 api.upgrade_url(),
-                Some("https://app.fopost.com/settings/billing")
+                Some("https://fopost.com/dashboard/settings/billing")
             );
         }
         other => panic!("expected an api error, got {other}"),
