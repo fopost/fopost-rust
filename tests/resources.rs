@@ -6,12 +6,13 @@ mod common;
 
 use common::{account_fixture, client};
 use fopost::models::{
-    AdBudget, AdGoal, AdKind, AdStatus, AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceSpec,
-    BoostPost, CreateAccountGroup, CreateAudience, CreateAutomation, CreateWebhook, InboxItemState,
-    InboxItemType, InboxReply, InboxSort, LeadsQuery, ListAccounts, ListInbox, MarkThreadRead,
-    Platform, SignalLevel, StartInboxConversation, TelegramBotCommand, TriggerType,
-    UpdateInboxItem, UpdateSlackIdentity, ValidateLength, ValidateMedia, ValidateMediaItem,
-    ValidatePost, WebhookEvent,
+    AdBudget, AdGoal, AdInsightsQuery, AdKind, AdObjectLevel, AdObjectQuery, AdObjectRef, AdStatus,
+    AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceSpec, BoostPost, CreateAccountGroup,
+    CreateAudience, CreateAutomation, CreateWebhook, InboxItemState, InboxItemType, InboxReply,
+    InboxSort, InsightsBreakdown, InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts,
+    ListInbox, MarkThreadRead, Platform, SetAdStatuses, SignalLevel, StartInboxConversation,
+    TelegramBotCommand, TriggerType, UpdateInboxItem, UpdateSlackIdentity, ValidateLength,
+    ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1035,6 +1036,200 @@ async fn leads_send_the_cursor_and_read_the_next_one() {
         .await
         .unwrap();
     assert_eq!(page.leads[0].fields[0].values[0], "Morgan Lee");
+    assert_eq!(page.next_cursor.as_deref(), Some("cur_2"));
+}
+
+#[tokio::test]
+async fn the_account_tree_nests_ad_sets_and_ads_under_campaigns() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/ads/accounts/act_123/tree"))
+        .and(query_param("workspace_id", "ws_1"))
+        .and(query_param("connection_id", "conn_1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "adAccountId": "act_123",
+                "currency": "USD",
+                "campaigns": [{
+                    "id": "c_1",
+                    "name": "Launch",
+                    "status": "PAUSED",
+                    "budgetMinor": null,
+                    "adSets": [{
+                        "id": "s_1",
+                        "name": "US",
+                        "campaignId": "c_1",
+                        "status": "ACTIVE",
+                        "budgetMinor": 5000,
+                        "budgetType": "daily",
+                        "ads": [{"id": "a_1", "name": "Hero", "creativeId": "cr_1", "status": "ACTIVE"}]
+                    }]
+                }]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let tree = client
+        .ads()
+        .tree("act_123", &AdObjectQuery::new("conn_1").workspace("ws_1"))
+        .await
+        .unwrap();
+    let campaign = &tree.campaigns[0];
+    assert_eq!(campaign.campaign.id, "c_1");
+    assert_eq!(campaign.campaign.budget_minor, None);
+    assert_eq!(campaign.ad_sets[0].ad_set.budget_minor, Some(5000));
+    assert_eq!(
+        campaign.ad_sets[0].ads[0].creative_id.as_deref(),
+        Some("cr_1")
+    );
+}
+
+#[tokio::test]
+async fn bulk_status_posts_each_object_and_reads_each_outcome() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/ads/status"))
+        .and(body_json(serde_json::json!({
+            "workspaceId": "ws_1",
+            "connectionId": "conn_1",
+            "status": "paused",
+            "objects": [{"id": "c_1", "level": "campaign"}, {"id": "s_1", "level": "ad_set"}]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [
+                {"id": "c_1", "level": "campaign", "ok": true, "error": null},
+                {"id": "s_1", "level": "ad_set", "ok": false, "error": "Not found"}
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let results = client
+        .ads()
+        .set_statuses(&SetAdStatuses::new(
+            "ws_1",
+            "conn_1",
+            AdStatus::Paused,
+            [
+                AdObjectRef::new("c_1", AdObjectLevel::Campaign),
+                AdObjectRef::new("s_1", AdObjectLevel::AdSet),
+            ],
+        ))
+        .await
+        .unwrap();
+    assert!(results[0].ok);
+    assert_eq!(results[1].error.as_deref(), Some("Not found"));
+}
+
+#[tokio::test]
+async fn insights_send_the_range_breakdown_and_daily_flag() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/ads/insights"))
+        .and(query_param("connection_id", "conn_1"))
+        .and(query_param("object_id", "c_1"))
+        .and(query_param("since", "2026-09-01"))
+        .and(query_param("until", "2026-09-07"))
+        .and(query_param("breakdown", "age"))
+        .and(query_param("daily", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "objectId": "c_1",
+                "since": "2026-09-01",
+                "until": "2026-09-07",
+                "breakdownBy": "age",
+                "totals": {"impressions": 100, "clicks": 4, "ctr": 4.0, "spendMinor": 250},
+                "breakdown": [{"key": "18-24", "metrics": {"impressions": 60}}],
+                "timeline": [{"date": "2026-09-01", "metrics": {"impressions": 10}}]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/ads/ad_1/insights"))
+        .and(query_param("workspace_id", "ws_1"))
+        .and(query_param("since", "2026-09-01"))
+        .and(query_param("until", "2026-09-07"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"objectId": "ad_1", "since": "2026-09-01", "until": "2026-09-07", "totals": null}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let report = client
+        .ads()
+        .insights(
+            &InsightsQuery::new("conn_1", "c_1", "2026-09-01", "2026-09-07")
+                .breakdown(InsightsBreakdown::Age)
+                .daily(true),
+        )
+        .await
+        .unwrap();
+    assert_eq!(report.breakdown_by, Some(InsightsBreakdown::Age));
+    assert_eq!(report.totals.as_ref().unwrap().spend_minor, 250);
+    assert_eq!(report.breakdown[0].metrics.impressions, 60);
+    assert_eq!(report.timeline[0].date, "2026-09-01");
+
+    let ad = client
+        .ads()
+        .ad_insights(
+            "ad_1",
+            &AdInsightsQuery::new("ws_1", "2026-09-01", "2026-09-07"),
+        )
+        .await
+        .unwrap();
+    assert!(ad.totals.is_none());
+}
+
+#[tokio::test]
+async fn the_leads_feed_sends_the_cursor_and_reads_the_next_one() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/ads/leads"))
+        .and(query_param("workspace_id", "ws_1"))
+        .and(query_param("page_id", "page_1"))
+        .and(query_param("cursor", "cur_1"))
+        .and(query_param("limit", "50"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "leads": [{
+                    "id": "lead_1",
+                    "leadId": "m_1",
+                    "pageId": "page_1",
+                    "formId": null,
+                    "isOrganic": true,
+                    "fields": [{"name": "full_name", "values": ["Morgan Lee"]}],
+                    "submittedAt": "2026-09-19T10:00:00.000Z"
+                }],
+                "nextCursor": "cur_2"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let page = client
+        .ads()
+        .leads_feed(
+            &LeadsFeedQuery::new()
+                .workspace("ws_1")
+                .page("page_1")
+                .cursor("cur_1")
+                .limit(50),
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.leads[0].lead_id, "m_1");
+    assert!(page.leads[0].form_id.is_none());
     assert_eq!(page.next_cursor.as_deref(), Some("cur_2"));
 }
 

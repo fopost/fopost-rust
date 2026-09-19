@@ -1,4 +1,5 @@
-//! Ads — boosts, standalone ads, audiences and lead forms on a Meta Ads connection.
+//! Ads — boosts, standalone ads, the campaign tree, creatives, audiences,
+//! insights and lead forms on a Meta Ads connection.
 //!
 //! Amounts are in the ad account's currency, in minor units: `1500` is $15.00
 //! on a USD account.
@@ -274,6 +275,8 @@ pub struct AdCreative {
     pub destination_url: Option<String>,
     #[serde(default)]
     pub media_url: Option<String>,
+    #[serde(default)]
+    pub url_tags: Option<String>,
 }
 
 /// A boost or ad created through FoPost.
@@ -698,6 +701,9 @@ pub struct CreateAd {
     /// A media library asset url.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub media_url: Option<String>,
+    /// Query string appended to every link in the ad, e.g. `utm_source=meta&utm_medium=paid`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url_tags: Option<String>,
     /// Default `true`: created paused, spending nothing until resumed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub paused: Option<bool>,
@@ -729,6 +735,7 @@ impl CreateAd {
             headline: None,
             destination_url: None,
             media_url: None,
+            url_tags: None,
             paused: None,
         }
     }
@@ -745,6 +752,11 @@ impl CreateAd {
 
     pub fn media_url(mut self, media_url: impl Into<String>) -> Self {
         self.media_url = Some(media_url.into());
+        self
+    }
+
+    pub fn url_tags(mut self, url_tags: impl Into<String>) -> Self {
+        self.url_tags = Some(url_tags.into());
         self
     }
 
@@ -973,4 +985,1061 @@ impl LeadsQuery {
         self.workspace_id = Some(workspace_id.into());
         self
     }
+}
+
+string_enum! {
+    /// Which kind of Meta object a bulk status change names.
+    pub enum AdObjectLevel {
+        Campaign => "campaign",
+        AdSet => "ad_set",
+        Ad => "ad",
+    }
+}
+
+string_enum! {
+    /// How insights are split.
+    pub enum InsightsBreakdown {
+        Age => "age",
+        Gender => "gender",
+        Placement => "placement",
+        Country => "country",
+    }
+}
+
+string_enum! {
+    /// What a creative carries. Meta's catch-all `other` parses as `Other("other")`.
+    pub enum CreativeFormat {
+        Image => "image",
+        Video => "video",
+        Carousel => "carousel",
+        Post => "post",
+    }
+}
+
+string_enum! {
+    /// The button on a creative.
+    pub enum CallToAction {
+        LearnMore => "LEARN_MORE",
+        ShopNow => "SHOP_NOW",
+        SignUp => "SIGN_UP",
+        Subscribe => "SUBSCRIBE",
+        ContactUs => "CONTACT_US",
+        Download => "DOWNLOAD",
+        GetOffer => "GET_OFFER",
+        BookNow => "BOOK_NOW",
+        ApplyNow => "APPLY_NOW",
+        WatchMore => "WATCH_MORE",
+    }
+}
+
+/// The connection a Meta object is read or changed through. Writes also need
+/// the workspace.
+#[derive(Debug, Clone)]
+pub struct AdObjectQuery {
+    pub connection_id: String,
+    pub workspace_id: Option<String>,
+}
+
+impl AdObjectQuery {
+    pub fn new(connection_id: impl Into<String>) -> Self {
+        Self {
+            connection_id: connection_id.into(),
+            workspace_id: None,
+        }
+    }
+
+    pub fn workspace(mut self, workspace_id: impl Into<String>) -> Self {
+        self.workspace_id = Some(workspace_id.into());
+        self
+    }
+}
+
+/// A Meta campaign. Read live, never stored.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdCampaign {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    /// Meta's `ACTIVE`, `PAUSED`, `DELETED` or `ARCHIVED`.
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub effective_status: Option<String>,
+    #[serde(default)]
+    pub objective: Option<String>,
+    /// `None` when the budget lives on the ad sets.
+    #[serde(default)]
+    pub budget_minor: Option<u64>,
+    #[serde(default)]
+    pub budget_type: Option<AdBudgetType>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+}
+
+/// A Meta ad set. Read live, never stored.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdSet {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub campaign_id: Option<String>,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub effective_status: Option<String>,
+    #[serde(default)]
+    pub budget_minor: Option<u64>,
+    #[serde(default)]
+    pub budget_type: Option<AdBudgetType>,
+    #[serde(default)]
+    pub end_at: Option<String>,
+    #[serde(default)]
+    pub optimization_goal: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+}
+
+/// An ad inside a Meta ad set. Read live, never stored.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkAd {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub campaign_id: Option<String>,
+    #[serde(default)]
+    pub ad_set_id: Option<String>,
+    #[serde(default)]
+    pub creative_id: Option<String>,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub effective_status: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+}
+
+/// An ad set with its ads, inside the account tree.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TreeAdSet {
+    #[serde(flatten)]
+    pub ad_set: AdSet,
+    #[serde(default)]
+    pub ads: Vec<NetworkAd>,
+}
+
+/// A campaign with its ad sets, inside the account tree.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TreeCampaign {
+    #[serde(flatten)]
+    pub campaign: AdCampaign,
+    #[serde(default)]
+    pub ad_sets: Vec<TreeAdSet>,
+}
+
+/// Every campaign on an ad account with its ad sets and ads.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdAccountTree {
+    #[serde(default)]
+    pub ad_account_id: String,
+    #[serde(default)]
+    pub currency: Option<String>,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
+    pub campaigns: Vec<TreeCampaign>,
+}
+
+/// The body of `POST /ads/campaigns`. Created paused unless `paused` is `false`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateCampaign {
+    pub workspace_id: String,
+    pub connection_id: String,
+    /// `act_…`
+    pub ad_account_id: String,
+    pub name: String,
+    pub goal: AdGoal,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paused: Option<bool>,
+}
+
+impl CreateCampaign {
+    pub fn new(
+        workspace_id: impl Into<String>,
+        connection_id: impl Into<String>,
+        ad_account_id: impl Into<String>,
+        name: impl Into<String>,
+        goal: AdGoal,
+    ) -> Self {
+        Self {
+            workspace_id: workspace_id.into(),
+            connection_id: connection_id.into(),
+            ad_account_id: ad_account_id.into(),
+            name: name.into(),
+            goal,
+            paused: None,
+        }
+    }
+
+    /// `false` to start delivering at once.
+    pub fn paused(mut self, paused: bool) -> Self {
+        self.paused = Some(paused);
+        self
+    }
+}
+
+/// The body of `PATCH /ads/campaigns/{id}`: a new name, a new status, or both.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCampaign {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<AdStatus>,
+}
+
+impl UpdateCampaign {
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn status(mut self, status: AdStatus) -> Self {
+        self.status = Some(status);
+        self
+    }
+}
+
+/// The body of `POST /ads/ad-sets`. Created paused unless `paused` is `false`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateAdSet {
+    pub workspace_id: String,
+    pub connection_id: String,
+    pub campaign_id: String,
+    /// The Page the ads in this set run as.
+    pub page_id: String,
+    pub name: String,
+    pub goal: AdGoal,
+    pub budget: AdBudget,
+    pub targeting: AdTargeting,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paused: Option<bool>,
+}
+
+impl CreateAdSet {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        workspace_id: impl Into<String>,
+        connection_id: impl Into<String>,
+        campaign_id: impl Into<String>,
+        page_id: impl Into<String>,
+        name: impl Into<String>,
+        goal: AdGoal,
+        budget: AdBudget,
+        targeting: AdTargeting,
+    ) -> Self {
+        Self {
+            workspace_id: workspace_id.into(),
+            connection_id: connection_id.into(),
+            campaign_id: campaign_id.into(),
+            page_id: page_id.into(),
+            name: name.into(),
+            goal,
+            budget,
+            targeting,
+            paused: None,
+        }
+    }
+
+    /// `false` to start delivering at once.
+    pub fn paused(mut self, paused: bool) -> Self {
+        self.paused = Some(paused);
+        self
+    }
+}
+
+/// The body of `PATCH /ads/ad-sets/{id}`. A new budget keeps the budget type
+/// set at creation.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAdSet {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<AdStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub budget_minor: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub targeting: Option<AdTargeting>,
+}
+
+impl UpdateAdSet {
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn status(mut self, status: AdStatus) -> Self {
+        self.status = Some(status);
+        self
+    }
+
+    pub fn budget_minor(mut self, budget_minor: u64) -> Self {
+        self.budget_minor = Some(budget_minor);
+        self
+    }
+
+    pub fn end_at(mut self, end_at: impl Into<String>) -> Self {
+        self.end_at = Some(end_at.into());
+        self
+    }
+
+    pub fn targeting(mut self, targeting: AdTargeting) -> Self {
+        self.targeting = Some(targeting);
+        self
+    }
+}
+
+/// The body of `POST /ads/ads`: an ad inside an ad set. Created paused unless
+/// `paused` is `false`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateNetworkAd {
+    pub workspace_id: String,
+    pub connection_id: String,
+    pub ad_set_id: String,
+    /// From `create_creative()` or `creatives()`.
+    pub creative_id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paused: Option<bool>,
+}
+
+impl CreateNetworkAd {
+    pub fn new(
+        workspace_id: impl Into<String>,
+        connection_id: impl Into<String>,
+        ad_set_id: impl Into<String>,
+        creative_id: impl Into<String>,
+        name: impl Into<String>,
+    ) -> Self {
+        Self {
+            workspace_id: workspace_id.into(),
+            connection_id: connection_id.into(),
+            ad_set_id: ad_set_id.into(),
+            creative_id: creative_id.into(),
+            name: name.into(),
+            paused: None,
+        }
+    }
+
+    /// `false` to start delivering at once.
+    pub fn paused(mut self, paused: bool) -> Self {
+        self.paused = Some(paused);
+        self
+    }
+}
+
+/// The body of `PATCH /ads/ads/{id}`.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateNetworkAd {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<AdStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub creative_id: Option<String>,
+}
+
+impl UpdateNetworkAd {
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn status(mut self, status: AdStatus) -> Self {
+        self.status = Some(status);
+        self
+    }
+
+    pub fn creative(mut self, creative_id: impl Into<String>) -> Self {
+        self.creative_id = Some(creative_id.into());
+        self
+    }
+}
+
+/// One object in a bulk status change.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdObjectRef {
+    pub id: String,
+    pub level: AdObjectLevel,
+}
+
+impl AdObjectRef {
+    pub fn new(id: impl Into<String>, level: AdObjectLevel) -> Self {
+        Self {
+            id: id.into(),
+            level,
+        }
+    }
+}
+
+/// The body of `POST /ads/status`: up to 50 objects.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetAdStatuses {
+    pub workspace_id: String,
+    pub connection_id: String,
+    pub status: AdStatus,
+    pub objects: Vec<AdObjectRef>,
+}
+
+impl SetAdStatuses {
+    pub fn new(
+        workspace_id: impl Into<String>,
+        connection_id: impl Into<String>,
+        status: AdStatus,
+        objects: impl IntoIterator<Item = AdObjectRef>,
+    ) -> Self {
+        Self {
+            workspace_id: workspace_id.into(),
+            connection_id: connection_id.into(),
+            status,
+            objects: objects.into_iter().collect(),
+        }
+    }
+}
+
+/// The outcome for one object of a bulk status change.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AdStatusResult {
+    pub id: String,
+    pub level: AdObjectLevel,
+    #[serde(default)]
+    pub ok: bool,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// A creative in an ad account's library.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Creative {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub format: Option<CreativeFormat>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub link: Option<String>,
+    #[serde(default)]
+    pub thumbnail_url: Option<String>,
+    #[serde(default)]
+    pub call_to_action: Option<String>,
+    #[serde(default)]
+    pub url_tags: Option<String>,
+}
+
+/// The answer to `GET /ads/creatives`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdCreatives {
+    #[serde(default)]
+    pub creatives: Vec<Creative>,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+}
+
+/// Filters for `GET /ads/creatives`.
+#[derive(Debug, Clone)]
+pub struct CreativesQuery {
+    pub connection_id: String,
+    /// `act_…`
+    pub ad_account_id: String,
+    pub workspace_id: Option<String>,
+}
+
+impl CreativesQuery {
+    pub fn new(connection_id: impl Into<String>, ad_account_id: impl Into<String>) -> Self {
+        Self {
+            connection_id: connection_id.into(),
+            ad_account_id: ad_account_id.into(),
+            workspace_id: None,
+        }
+    }
+
+    pub fn workspace(mut self, workspace_id: impl Into<String>) -> Self {
+        self.workspace_id = Some(workspace_id.into());
+        self
+    }
+}
+
+/// One card of a carousel creative.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CarouselCard {
+    /// A library image.
+    pub media_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub destination_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headline: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+impl CarouselCard {
+    pub fn new(media_url: impl Into<String>) -> Self {
+        Self {
+            media_url: media_url.into(),
+            destination_url: None,
+            headline: None,
+            description: None,
+        }
+    }
+
+    pub fn destination_url(mut self, destination_url: impl Into<String>) -> Self {
+        self.destination_url = Some(destination_url.into());
+        self
+    }
+
+    pub fn headline(mut self, headline: impl Into<String>) -> Self {
+        self.headline = Some(headline.into());
+        self
+    }
+
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+}
+
+/// The body of `POST /ads/creatives`. A video needs `media_url`; a carousel
+/// needs 2 to 10 `cards`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateCreative {
+    pub workspace_id: String,
+    pub connection_id: String,
+    /// `act_…`
+    pub ad_account_id: String,
+    pub page_id: String,
+    pub name: String,
+    pub format: CreativeFormat,
+    /// Primary text.
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headline: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub destination_url: Option<String>,
+    /// `LEARN_MORE` when unset.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub call_to_action: Option<CallToAction>,
+    /// Query string appended to every link in the ad.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url_tags: Option<String>,
+    /// A media library asset url: the image, or the video.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_url: Option<String>,
+    /// A video's poster frame, as a library image.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thumbnail_media_url: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub cards: Vec<CarouselCard>,
+}
+
+impl CreateCreative {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        workspace_id: impl Into<String>,
+        connection_id: impl Into<String>,
+        ad_account_id: impl Into<String>,
+        page_id: impl Into<String>,
+        name: impl Into<String>,
+        format: CreativeFormat,
+        text: impl Into<String>,
+    ) -> Self {
+        Self {
+            workspace_id: workspace_id.into(),
+            connection_id: connection_id.into(),
+            ad_account_id: ad_account_id.into(),
+            page_id: page_id.into(),
+            name: name.into(),
+            format,
+            text: text.into(),
+            headline: None,
+            destination_url: None,
+            call_to_action: None,
+            url_tags: None,
+            media_url: None,
+            thumbnail_media_url: None,
+            cards: Vec::new(),
+        }
+    }
+
+    pub fn headline(mut self, headline: impl Into<String>) -> Self {
+        self.headline = Some(headline.into());
+        self
+    }
+
+    pub fn destination_url(mut self, destination_url: impl Into<String>) -> Self {
+        self.destination_url = Some(destination_url.into());
+        self
+    }
+
+    pub fn call_to_action(mut self, call_to_action: CallToAction) -> Self {
+        self.call_to_action = Some(call_to_action);
+        self
+    }
+
+    pub fn url_tags(mut self, url_tags: impl Into<String>) -> Self {
+        self.url_tags = Some(url_tags.into());
+        self
+    }
+
+    pub fn media_url(mut self, media_url: impl Into<String>) -> Self {
+        self.media_url = Some(media_url.into());
+        self
+    }
+
+    pub fn thumbnail_media_url(mut self, thumbnail_media_url: impl Into<String>) -> Self {
+        self.thumbnail_media_url = Some(thumbnail_media_url.into());
+        self
+    }
+
+    pub fn cards(mut self, cards: impl IntoIterator<Item = CarouselCard>) -> Self {
+        self.cards = cards.into_iter().collect();
+        self
+    }
+}
+
+/// The body of `PATCH /ads/audiences/{id}`.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAudience {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+impl UpdateAudience {
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+}
+
+/// The body of `POST /ads/reach-estimate`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EstimateReach {
+    pub workspace_id: String,
+    pub connection_id: String,
+    /// `act_…`
+    pub ad_account_id: String,
+    pub page_id: String,
+    pub targeting: AdTargeting,
+}
+
+impl EstimateReach {
+    pub fn new(
+        workspace_id: impl Into<String>,
+        connection_id: impl Into<String>,
+        ad_account_id: impl Into<String>,
+        page_id: impl Into<String>,
+        targeting: AdTargeting,
+    ) -> Self {
+        Self {
+            workspace_id: workspace_id.into(),
+            connection_id: connection_id.into(),
+            ad_account_id: ad_account_id.into(),
+            page_id: page_id.into(),
+            targeting,
+        }
+    }
+}
+
+/// Meta's audience size range for a targeting. `ready` is false while Meta is
+/// still computing it.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ReachEstimate {
+    #[serde(default)]
+    pub lower: Option<u64>,
+    #[serde(default)]
+    pub upper: Option<u64>,
+    #[serde(default)]
+    pub ready: bool,
+}
+
+/// Delivery numbers over a range.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InsightsMetrics {
+    #[serde(default)]
+    pub impressions: u64,
+    #[serde(default)]
+    pub reach: u64,
+    #[serde(default)]
+    pub clicks: u64,
+    /// Account currency, minor units.
+    #[serde(default)]
+    pub spend_minor: u64,
+    /// Clicks per impression, as a percentage.
+    #[serde(default)]
+    pub ctr: f64,
+    #[serde(default)]
+    pub leads: u64,
+}
+
+/// One value of the requested breakdown.
+#[derive(Debug, Clone, Deserialize)]
+pub struct InsightsBreakdownRow {
+    #[serde(default)]
+    pub key: String,
+    #[serde(default)]
+    pub metrics: InsightsMetrics,
+}
+
+/// One day of the timeline.
+#[derive(Debug, Clone, Deserialize)]
+pub struct InsightsDay {
+    #[serde(default)]
+    pub date: String,
+    #[serde(default)]
+    pub metrics: InsightsMetrics,
+}
+
+/// An object's delivery over a date range. `totals` is `None` when Meta has
+/// nothing for the range.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InsightsReport {
+    #[serde(default)]
+    pub object_id: String,
+    #[serde(default)]
+    pub currency: Option<String>,
+    #[serde(default)]
+    pub since: String,
+    #[serde(default)]
+    pub until: String,
+    #[serde(default)]
+    pub breakdown_by: Option<InsightsBreakdown>,
+    #[serde(default)]
+    pub totals: Option<InsightsMetrics>,
+    #[serde(default)]
+    pub breakdown: Vec<InsightsBreakdownRow>,
+    #[serde(default)]
+    pub timeline: Vec<InsightsDay>,
+}
+
+/// Filters for `GET /ads/insights`. `object_id` is an ad account (`act_…`),
+/// campaign, ad set or ad; `since` and `until` are inclusive `YYYY-MM-DD` dates.
+#[derive(Debug, Clone)]
+pub struct InsightsQuery {
+    pub connection_id: String,
+    pub object_id: String,
+    pub since: String,
+    pub until: String,
+    pub breakdown: Option<InsightsBreakdown>,
+    /// Add the per-day timeline.
+    pub daily: Option<bool>,
+    pub workspace_id: Option<String>,
+}
+
+impl InsightsQuery {
+    pub fn new(
+        connection_id: impl Into<String>,
+        object_id: impl Into<String>,
+        since: impl Into<String>,
+        until: impl Into<String>,
+    ) -> Self {
+        Self {
+            connection_id: connection_id.into(),
+            object_id: object_id.into(),
+            since: since.into(),
+            until: until.into(),
+            breakdown: None,
+            daily: None,
+            workspace_id: None,
+        }
+    }
+
+    pub fn breakdown(mut self, breakdown: InsightsBreakdown) -> Self {
+        self.breakdown = Some(breakdown);
+        self
+    }
+
+    pub fn daily(mut self, daily: bool) -> Self {
+        self.daily = Some(daily);
+        self
+    }
+
+    pub fn workspace(mut self, workspace_id: impl Into<String>) -> Self {
+        self.workspace_id = Some(workspace_id.into());
+        self
+    }
+}
+
+/// Filters for `GET /ads/{id}/insights`, on a boost or ad created through
+/// FoPost.
+#[derive(Debug, Clone)]
+pub struct AdInsightsQuery {
+    pub workspace_id: String,
+    pub since: String,
+    pub until: String,
+    pub breakdown: Option<InsightsBreakdown>,
+    pub daily: Option<bool>,
+}
+
+impl AdInsightsQuery {
+    pub fn new(
+        workspace_id: impl Into<String>,
+        since: impl Into<String>,
+        until: impl Into<String>,
+    ) -> Self {
+        Self {
+            workspace_id: workspace_id.into(),
+            since: since.into(),
+            until: until.into(),
+            breakdown: None,
+            daily: None,
+        }
+    }
+
+    pub fn breakdown(mut self, breakdown: InsightsBreakdown) -> Self {
+        self.breakdown = Some(breakdown);
+        self
+    }
+
+    pub fn daily(mut self, daily: bool) -> Self {
+        self.daily = Some(daily);
+        self
+    }
+}
+
+/// An Instant Form with its settings.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LeadFormDetail {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub leads_count: u64,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub questions: Vec<String>,
+    #[serde(default)]
+    pub page_id: Option<String>,
+    #[serde(default)]
+    pub privacy_policy_url: Option<String>,
+    #[serde(default)]
+    pub locale: Option<String>,
+}
+
+/// Filters for `GET /ads/lead-forms/{formId}`.
+#[derive(Debug, Clone)]
+pub struct LeadFormQuery {
+    pub connection_id: String,
+    pub page_id: String,
+    pub workspace_id: Option<String>,
+}
+
+impl LeadFormQuery {
+    pub fn new(connection_id: impl Into<String>, page_id: impl Into<String>) -> Self {
+        Self {
+            connection_id: connection_id.into(),
+            page_id: page_id.into(),
+            workspace_id: None,
+        }
+    }
+
+    pub fn workspace(mut self, workspace_id: impl Into<String>) -> Self {
+        self.workspace_id = Some(workspace_id.into());
+        self
+    }
+}
+
+/// The body of `POST /ads/lead-forms/{formId}/archive`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveLeadForm {
+    pub workspace_id: String,
+    pub connection_id: String,
+    pub page_id: String,
+}
+
+impl ArchiveLeadForm {
+    pub fn new(
+        workspace_id: impl Into<String>,
+        connection_id: impl Into<String>,
+        page_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            workspace_id: workspace_id.into(),
+            connection_id: connection_id.into(),
+            page_id: page_id.into(),
+        }
+    }
+}
+
+/// A lead collected from a subscribed Page.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedLead {
+    pub id: String,
+    /// Meta's lead id.
+    #[serde(default)]
+    pub lead_id: String,
+    #[serde(default)]
+    pub connection_id: Option<String>,
+    #[serde(default)]
+    pub page_id: Option<String>,
+    #[serde(default)]
+    pub form_id: Option<String>,
+    #[serde(default)]
+    pub ad_id: Option<String>,
+    #[serde(default)]
+    pub ad_name: Option<String>,
+    #[serde(default)]
+    pub campaign_name: Option<String>,
+    #[serde(default)]
+    pub platform: Option<String>,
+    #[serde(default)]
+    pub is_organic: bool,
+    #[serde(default)]
+    pub fields: Vec<LeadField>,
+    #[serde(default)]
+    pub submitted_at: Option<String>,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+}
+
+/// One page of the leads feed. Pass `next_cursor` back as `cursor` for the
+/// next; `None` on the last page.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LeadsFeedPage {
+    #[serde(default)]
+    pub leads: Vec<FeedLead>,
+    #[serde(default)]
+    pub next_cursor: Option<String>,
+}
+
+/// Filters for `GET /ads/leads`.
+#[derive(Debug, Clone, Default)]
+pub struct LeadsFeedQuery {
+    pub workspace_id: Option<String>,
+    pub form_id: Option<String>,
+    pub page_id: Option<String>,
+    /// The `next_cursor` of the previous page.
+    pub cursor: Option<String>,
+    /// 1 to 100.
+    pub limit: Option<u32>,
+}
+
+impl LeadsFeedQuery {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn workspace(mut self, workspace_id: impl Into<String>) -> Self {
+        self.workspace_id = Some(workspace_id.into());
+        self
+    }
+
+    pub fn form(mut self, form_id: impl Into<String>) -> Self {
+        self.form_id = Some(form_id.into());
+        self
+    }
+
+    pub fn page(mut self, page_id: impl Into<String>) -> Self {
+        self.page_id = Some(page_id.into());
+        self
+    }
+
+    pub fn cursor(mut self, cursor: impl Into<String>) -> Self {
+        self.cursor = Some(cursor.into());
+        self
+    }
+
+    pub fn limit(mut self, limit: u32) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+}
+
+/// A Page whose leads are collected into the feed.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LeadPage {
+    #[serde(default)]
+    pub connection_id: String,
+    pub page_id: String,
+    #[serde(default)]
+    pub page_name: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+}
+
+/// The body of `POST /ads/lead-pages`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscribeLeadPage {
+    pub workspace_id: String,
+    pub connection_id: String,
+    pub page_id: String,
+}
+
+impl SubscribeLeadPage {
+    pub fn new(
+        workspace_id: impl Into<String>,
+        connection_id: impl Into<String>,
+        page_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            workspace_id: workspace_id.into(),
+            connection_id: connection_id.into(),
+            page_id: page_id.into(),
+        }
+    }
+}
+
+/// The answer to `POST /ads/lead-pages`. `backfilled` counts the recent leads
+/// copied into the feed.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LeadPageSubscribed {
+    #[serde(default)]
+    pub page_id: String,
+    #[serde(default)]
+    pub backfilled: u64,
 }
