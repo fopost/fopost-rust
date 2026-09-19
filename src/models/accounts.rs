@@ -162,6 +162,66 @@ pub struct TelegramBotCommands {
     pub commands: Vec<TelegramBotCommand>,
 }
 
+/// A channel a Slack account can post to.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SlackChannel {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub is_private: bool,
+    /// Whether the bot is in the channel.
+    #[serde(default)]
+    pub is_member: bool,
+    /// The channel this account posts to.
+    #[serde(default)]
+    pub is_current: bool,
+}
+
+/// A person in the connected Slack workspace. Pass `id` as the handle to start a DM.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SlackMember {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub real_name: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub avatar: Option<String>,
+    #[serde(default)]
+    pub is_bot: bool,
+}
+
+/// The name and icon a Slack account posts under. `None` falls back to the app's own.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct SlackIdentity {
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub icon_url: Option<String>,
+    /// An emoji code such as `:rocket:`.
+    #[serde(default)]
+    pub icon_emoji: Option<String>,
+}
+
+/// The body of `PATCH /accounts/{id}/slack/identity`. For each field `None` keeps the
+/// value and `Some(None)` clears it. Set `icon_url` or `icon_emoji`, not both; setting
+/// one clears the other.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct UpdateSlackIdentity {
+    /// 1-80 characters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub username: Option<Option<String>>,
+    /// An http(s) image URL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon_url: Option<Option<String>>,
+    /// An emoji code such as `:rocket:`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon_emoji: Option<Option<String>>,
+}
+
 /// A newly connected account.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AccountCreated {

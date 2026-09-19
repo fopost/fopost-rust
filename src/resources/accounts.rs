@@ -7,8 +7,9 @@ use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
     Account, AccountAnalyticsHistory, AccountCreated, AccountDetail, AccountHealth, AccountMoved,
     AccountRenamed, AccountsHealthSummary, Community, CommunitySearchResult, CreateAccount,
-    CredentialCheck, ListAccounts, Message, PrimaryToggled, TelegramBotCommand,
-    TelegramBotCommands, TelegramConnectCode, TelegramConnectStatus, TokenRefreshed,
+    CredentialCheck, ListAccounts, Message, PrimaryToggled, SlackChannel, SlackIdentity,
+    SlackMember, TelegramBotCommand, TelegramBotCommands, TelegramConnectCode,
+    TelegramConnectStatus, TokenRefreshed, UpdateSlackIdentity,
 };
 
 /// Connected accounts, their health, and their X communities.
@@ -172,6 +173,68 @@ impl Accounts<'_> {
                 &format!("/accounts/{id}/telegram/commands"),
                 None,
                 None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Channels a Slack account can post to: every public channel, and private ones the
+    /// app was invited to. A `409` with code `webhook_connection` means the account posts
+    /// through a webhook.
+    pub async fn slack_channels(&self, id: &str) -> Result<Vec<SlackChannel>> {
+        let body: Envelope<Vec<SlackChannel>> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/slack/channels"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// People in a Slack account's workspace, for addressing a DM.
+    pub async fn slack_members(&self, id: &str) -> Result<Vec<SlackMember>> {
+        let body: Envelope<Vec<SlackMember>> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/slack/members"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// The name and icon a Slack account posts under.
+    pub async fn slack_identity(&self, id: &str) -> Result<SlackIdentity> {
+        let body: Envelope<SlackIdentity> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/slack/identity"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Set the name and icon a Slack account posts under.
+    pub async fn update_slack_identity(
+        &self,
+        id: &str,
+        identity: &UpdateSlackIdentity,
+    ) -> Result<SlackIdentity> {
+        let body: Envelope<SlackIdentity> = self
+            .http
+            .send(
+                Method::PATCH,
+                &format!("/accounts/{id}/slack/identity"),
+                None,
+                Some(identity),
             )
             .await?;
         Ok(body.data)
