@@ -5,8 +5,8 @@ use std::time::Duration;
 use crate::error::{Error, Result};
 use crate::http::{HttpClient, DEFAULT_BASE_URL, USER_AGENT};
 use crate::resources::{
-    AccountGroups, Accounts, Ads, Analytics, Automations, Inbox, Labels, Media, Posts, Validate,
-    Webhooks, Workspaces,
+    AccountGroups, Accounts, Ads, Analytics, Automations, Blogs, Inbox, Labels, Media, Posts,
+    Validate, Webhooks, Workspaces,
 };
 
 /// The environment variable the key is read from by [`Client::from_env`].
@@ -122,6 +122,11 @@ impl Client {
     /// Check content, length, or a media URL against platform rules without creating a post.
     pub fn validate(&self) -> Validate<'_> {
         Validate { http: &self.http }
+    }
+
+    /// Blogs, articles and products that already live on a connected site.
+    pub fn blogs(&self) -> Blogs<'_> {
+        Blogs { http: &self.http }
     }
 
     /// Call an endpoint the SDK does not wrap yet, with the auth, retries, and
