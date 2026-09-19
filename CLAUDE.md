@@ -92,7 +92,8 @@ reach `GET /accounts/{id}/communities` and friends through `client.request` unti
 Inbox lists page with `InboxPage<T>` (`meta: { page, perPage, total }`), a different
 footer from `Page<T>`. Inbox query params and the `/inbox/read` and `/inbox/refresh`
 bodies are snake_case; `PATCH /inbox/{id}` and every ads body are camelCase. `boost`,
-`create`, `set_status` and `delete` on `ads()` also need the `publish` scope, as do the
+`create`, `set_status`, `delete`, `set_statuses` and the create/update/delete/duplicate calls
+on campaigns, ad sets and network ads on `ads()` also need the `publish` scope, as do the
 inbox actions that act on the platform (`edit_comment`, `like`/`unlike`, `pin`/`unpin`,
 `react`, `start_conversation`, `set_typing`, media or quick replies on `reply_with`, deleting
 our own reply), and a boost
