@@ -15,15 +15,16 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Resolve dependencies that actually support our rust-version instead of taking the
-      # newest and failing. `url` -> `idna` -> `icu_*` 2.3 declares rustc 1.88, which would
-      # otherwise break the MSRV job on every transitive release. With this, 1.85 gets
-      # icu 2.1 and stable still gets the newest.
+      # newest and failing, so a transitive release that declares a higher rustc does not
+      # break the MSRV job. It cannot help when a crate declares no rust-version at all:
+      # yoke-derive 0.8.3 (via `url` -> `idna` -> `icu_*`) needs 1.87 and says nothing,
+      # which is why the MSRV moved from 1.85 to 1.88 in Sep 2026.
       CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
     strategy:
       fail-fast: false
       matrix:
         # The MSRV in Cargo.toml, and whatever is current.
-        rust: ['1.85', stable]
+        rust: ['1.88', stable]
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +44,7 @@ jobs:
       # On the MSRV we check what a consumer actually compiles: the library and the
       # examples. Tests are deliberately not run there — dev-dependencies never reach a
       # consumer, so their MSRV is not ours to honour, and pinning them to whatever still
-      # builds on 1.85 means chasing every release (wiremock 0.6.5 moved to edition-2024
+      # builds on the MSRV means chasing every release (wiremock 0.6.5 moved to edition-2024
       # let-chains, which need 1.88). Stable runs the full suite.
       - run: cargo check --all-features
         if: matrix.rust != 'stable'

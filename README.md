@@ -14,7 +14,7 @@ fopost = "0.2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
-Async, built on `reqwest`. Requires Rust 1.85 or newer.
+Async, built on `reqwest`. Requires Rust 1.88 or newer.
 
 > **0.x release.** The public API is still settling and minor versions may contain breaking
 > changes. Pin an exact version if that matters to you.

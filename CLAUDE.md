@@ -9,7 +9,7 @@ Crate `fopost` on crates.io — the official Rust client for the FoPost REST API
 `Client`: `posts()`, `accounts()`, `workspaces()`, `labels()`, `webhooks()`,
 `automations()`, `analytics()`, `media()`, `inbox()`, `ads()`.
 
-Edition 2021, `rust-version = "1.85"` (the MSRV CI builds against). Async on `reqwest`
+Edition 2021, `rust-version = "1.88"` (the MSRV CI builds against). Async on `reqwest`
 0.12 + `tokio`; models are `serde`; errors are `thiserror`. Docs at docs.rs/fopost.
 
 This crate calls the REST API directly and has no FoPost code dependency — and nothing
@@ -110,7 +110,7 @@ cargo run --example create_post                          # needs FOPOST_API_KEY
 cargo run --example preflight
 ```
 
-`.github/workflows/ci.yml` runs with `RUSTFLAGS: -D warnings` on `1.85` and `stable`:
+`.github/workflows/ci.yml` runs with `RUSTFLAGS: -D warnings` on `1.88` and `stable`:
 fmt check and clippy on stable only, `cargo test --all-features` on both, the
 no-default-features lib/tests build (so a `default-features = false` consumer stays
 unbroken), and an examples build. A second `docs` job runs nightly `cargo doc` with the
