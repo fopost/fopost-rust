@@ -11,8 +11,8 @@ use fopost::models::{
     CreateAudience, CreateAutomation, CreateWebhook, InboxItemState, InboxItemType, InboxReply,
     InboxSort, InsightsBreakdown, InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts,
     ListInbox, MarkThreadRead, Platform, SetAdStatuses, SignalLevel, StartInboxConversation,
-    TriggerType, UpdateInboxItem, ValidateLength, ValidateMedia, ValidateMediaItem, ValidatePost,
-    WebhookEvent,
+    TelegramBotCommand, TriggerType, UpdateInboxItem, ValidateLength, ValidateMedia,
+    ValidateMediaItem, ValidatePost, WebhookEvent,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -108,6 +108,106 @@ async fn a_blocked_move_surfaces_the_conflict_and_its_tables() {
         }
         other => panic!("unexpected error: {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn a_telegram_connect_code_sends_the_workspace() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/accounts/telegram/connect-code"))
+        .and(body_json(serde_json::json!({"workspaceId": "ws_1"})))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "data": {
+                "code": "abc123",
+                "command": "/connect abc123",
+                "bot_username": "fopost_bot",
+                "deep_link": null,
+                "group_link": null,
+                "expires_at": "2026-09-19T12:15:00Z"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let code = client
+        .accounts()
+        .create_telegram_connect_code(Some("ws_1"))
+        .await
+        .unwrap();
+    assert_eq!(code.code, "abc123");
+    assert_eq!(code.bot_username.as_deref(), Some("fopost_bot"));
+    assert!(code.deep_link.is_none());
+}
+
+#[tokio::test]
+async fn a_telegram_connect_status_sends_the_code() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/telegram/connect-code/status"))
+        .and(query_param("code", "abc123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"status": "failed", "account_id": null, "reason": "card_required"}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let status = client
+        .accounts()
+        .telegram_connect_status("abc123")
+        .await
+        .unwrap();
+    assert_eq!(status.status, "failed");
+    assert_eq!(status.reason.as_deref(), Some("card_required"));
+}
+
+#[tokio::test]
+async fn telegram_bot_commands_are_read_replaced_and_cleared() {
+    let server = MockServer::start().await;
+    let menu = serde_json::json!({
+        "data": {"commands": [{"command": "start", "description": "Start"}]}
+    });
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/telegram/commands"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(menu.clone()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/v1/accounts/acc_1/telegram/commands"))
+        .and(body_json(serde_json::json!({
+            "commands": [{"command": "start", "description": "Start"}]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(menu))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/v1/accounts/acc_1/telegram/commands"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": {"commands": []}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let accounts = client.accounts();
+    let got = accounts.telegram_bot_commands("acc_1").await.unwrap();
+    assert_eq!(got.commands[0].command, "start");
+    let set = accounts
+        .set_telegram_bot_commands("acc_1", &[TelegramBotCommand::new("start", "Start")])
+        .await
+        .unwrap();
+    assert_eq!(set.commands[0].description, "Start");
+    let cleared = accounts
+        .delete_telegram_bot_commands("acc_1")
+        .await
+        .unwrap();
+    assert!(cleared.commands.is_empty());
 }
 
 #[tokio::test]
