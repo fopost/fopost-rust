@@ -7,7 +7,8 @@ use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
     Account, AccountAnalyticsHistory, AccountCreated, AccountDetail, AccountHealth, AccountMoved,
     AccountRenamed, AccountsHealthSummary, Community, CommunitySearchResult, CreateAccount,
-    CredentialCheck, ListAccounts, Message, PrimaryToggled, SlackChannel, SlackIdentity,
+    CredentialCheck, ListAccounts, Message, PrimaryToggled, RedditDefaultSubreddit, RedditFlairs,
+    RedditSubreddit, RedditSubredditRules, SetRedditDefaultSubreddit, SlackChannel, SlackIdentity,
     SlackMember, TelegramBotCommand, TelegramBotCommands, TelegramConnectCode,
     TelegramConnectStatus, TokenRefreshed, UpdateSlackIdentity,
 };
@@ -173,6 +174,74 @@ impl Accounts<'_> {
                 &format!("/accounts/{id}/telegram/commands"),
                 None,
                 None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Subreddits a Reddit account is in, busiest first, plus its own profile page. A
+    /// `409` with code `reconnect_required` means the grant is short of a permission
+    /// this read needs.
+    pub async fn reddit_subreddits(&self, id: &str) -> Result<Vec<RedditSubreddit>> {
+        let body: Envelope<Vec<RedditSubreddit>> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/reddit/subreddits"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// The rules a subreddit publishes, in its own order. Show them before publishing.
+    pub async fn reddit_subreddit_rules(
+        &self,
+        id: &str,
+        subreddit: &str,
+    ) -> Result<RedditSubredditRules> {
+        let body: Envelope<RedditSubredditRules> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/reddit/subreddits/{subreddit}/rules"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Post flairs one subreddit offers. A flair id is valid only there, and one from
+    /// elsewhere fails preflight.
+    pub async fn reddit_flairs(&self, id: &str, subreddit: &str) -> Result<RedditFlairs> {
+        let body: Envelope<RedditFlairs> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/reddit/flairs"),
+                Some(vec![("subreddit", subreddit.to_string())]),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Where posts from this account go when a post names none. `None` falls back to the
+    /// account's own profile page.
+    pub async fn set_reddit_default_subreddit(
+        &self,
+        id: &str,
+        payload: &SetRedditDefaultSubreddit,
+    ) -> Result<RedditDefaultSubreddit> {
+        let body: Envelope<RedditDefaultSubreddit> = self
+            .http
+            .send(
+                Method::PUT,
+                &format!("/accounts/{id}/reddit/default-subreddit"),
+                None,
+                Some(payload),
             )
             .await?;
         Ok(body.data)

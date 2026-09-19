@@ -176,6 +176,9 @@ pub struct InboxItem {
     pub hidden: bool,
     #[serde(default)]
     pub liked: bool,
+    /// How the account voted where the network ranks by votes: `up`, `down` or none.
+    #[serde(default)]
+    pub vote: Option<String>,
     #[serde(default)]
     pub pinned: bool,
     /// Our reaction on a DM.
@@ -190,6 +193,9 @@ pub struct InboxItem {
     pub can_delete: bool,
     #[serde(default)]
     pub can_like: bool,
+    /// The network ranks by votes, so a down vote exists.
+    #[serde(default)]
+    pub can_vote: bool,
     /// Our own comment only.
     #[serde(default)]
     pub can_pin: bool,
@@ -853,4 +859,19 @@ pub struct InboxRefreshResult {
     pub rate_limited: u64,
     #[serde(default)]
     pub dm_reconnect: Vec<InboxDmReconnect>,
+}
+
+/// The body of `POST /inbox/{id}/vote`.
+#[derive(Debug, Clone, Serialize)]
+pub struct VoteInboxItem {
+    /// `up`, `down`, or `none` to take an earlier vote back.
+    pub direction: String,
+}
+
+impl VoteInboxItem {
+    pub fn new(direction: impl Into<String>) -> Self {
+        Self {
+            direction: direction.into(),
+        }
+    }
 }

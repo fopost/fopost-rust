@@ -6,8 +6,8 @@ use reqwest::Method;
 use crate::error::Result;
 use crate::http::{Envelope, HttpClient};
 use crate::models::{
-    ValidateLength, ValidateLengthResult, ValidateMedia, ValidateMediaResult, ValidatePost,
-    ValidatePostResult,
+    SubredditCheck, ValidateLength, ValidateLengthResult, ValidateMedia, ValidateMediaResult,
+    ValidatePost, ValidatePostResult,
 };
 
 /// Validation. Needs the `posts` scope; nothing is stored.
@@ -41,6 +41,25 @@ impl Validate<'_> {
         let body: Envelope<ValidateMediaResult> = self
             .http
             .send(Method::POST, "/validate/media", None, Some(payload))
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Whether a subreddit exists and takes a post from a connected Reddit account.
+    /// The check runs with that account's own token, so `account_id` is required. A
+    /// private, banned or missing subreddit answers 200 with `exists` false.
+    pub async fn subreddit(&self, account_id: &str, name: &str) -> Result<SubredditCheck> {
+        let body: Envelope<SubredditCheck> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                "/validate/subreddit",
+                Some(vec![
+                    ("account_id", account_id.to_string()),
+                    ("name", name.to_string()),
+                ]),
+                None,
+            )
             .await?;
         Ok(body.data)
     }

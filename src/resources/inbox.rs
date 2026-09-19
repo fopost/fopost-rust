@@ -13,7 +13,7 @@ use crate::models::{
     ApprovalDecision, InboxAccount, InboxApproval, InboxConversation, InboxConversationStarted,
     InboxItem, InboxPage, InboxPlatform, InboxRefreshResult, InboxReply, InboxReplyResult,
     InboxThread, ListInbox, ListInboxConversations, ListInboxThreads, MarkThreadRead,
-    StartInboxConversation, UpdateInboxItem,
+    StartInboxConversation, UpdateInboxItem, VoteInboxItem,
 };
 
 /// The inbox.
@@ -269,6 +269,22 @@ impl Inbox<'_> {
         let body: Envelope<InboxItem> = self
             .http
             .send::<_, ()>(Method::POST, &format!("/inbox/{id}/unlike"), None, None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Vote up or down where the network ranks by votes (Reddit), or take an earlier
+    /// vote back with `none`. Only where `can_vote` is true; also needs `publish`. An
+    /// upvote is the same call `like` makes, so `liked` moves with it.
+    pub async fn vote(&self, id: &str, payload: &VoteInboxItem) -> Result<InboxItem> {
+        let body: Envelope<InboxItem> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/inbox/{id}/vote"),
+                None,
+                Some(payload),
+            )
             .await?;
         Ok(body.data)
     }

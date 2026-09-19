@@ -83,7 +83,7 @@ workspace answers `403`.
 | Namespace | Methods |
 | --- | --- |
 | `posts()` | `list`, `list_all`, `get`, `create`, `update`, `delete`, `duplicate`, `publish`, `retry`, `cancel`, `preflight`, `deliveries`, `publish_runs`, `analytics`, `bulk`, `validate_import`, `commit_import`, `rollback_import` |
-| `accounts()` | `list`, `list_with`, `get`, `create`, `rename`, `move_to`, `delete`, `toggle_primary`, `validate`, `health`, `health_summary`, `refresh_token`, `analytics`, `communities`, `sync_communities`, `search_communities`, `add_community`, `remove_community`, `create_telegram_connect_code`, `telegram_connect_status`, `telegram_bot_commands`, `set_telegram_bot_commands`, `delete_telegram_bot_commands`, `slack_channels`, `slack_members`, `slack_identity`, `update_slack_identity` |
+| `accounts()` | `list`, `list_with`, `get`, `create`, `rename`, `move_to`, `delete`, `toggle_primary`, `validate`, `health`, `health_summary`, `refresh_token`, `analytics`, `communities`, `sync_communities`, `search_communities`, `add_community`, `remove_community`, `create_telegram_connect_code`, `telegram_connect_status`, `telegram_bot_commands`, `set_telegram_bot_commands`, `delete_telegram_bot_commands`, `slack_channels`, `slack_members`, `slack_identity`, `update_slack_identity`, `reddit_subreddits`, `reddit_subreddit_rules`, `reddit_flairs`, `set_reddit_default_subreddit` |
 | `account_groups()` | `list`, `get`, `create`, `update`, `delete`, `set_members` |
 | `workspaces()` | `list`, `get`, `create`, `update`, `delete`, `analytics` |
 | `labels()` | `list`, `get`, `create`, `update`, `delete` |
@@ -91,9 +91,9 @@ workspace answers `403`.
 | `automations()` | `list`, `get`, `create`, `update`, `delete`, `toggle`, `runs`, `get_run`, `stats`, `trigger` |
 | `analytics()` | `overview`, `time_series`, `top_posts`, `labels`, `posts_table`, `posting_streak`, `demographics`, `collect` |
 | `media()` | `list`, `upload`, `presign`, `complete`, `upload_direct`, `delete` |
-| `inbox()` | `list`, `threads`, `conversations`, `unread_count`, `accounts`, `platforms`, `mark_thread_read`, `refresh`, `update`, `edit_comment`, `reply`, `reply_with`, `hide`, `unhide`, `delete`, `like`, `unlike`, `pin`, `unpin`, `react`, `start_conversation`, `set_typing`, `approvals`, `approve_reply`, `reject_reply` |
+| `inbox()` | `list`, `threads`, `conversations`, `unread_count`, `accounts`, `platforms`, `mark_thread_read`, `refresh`, `update`, `edit_comment`, `reply`, `reply_with`, `hide`, `unhide`, `delete`, `like`, `unlike`, `vote`, `pin`, `unpin`, `react`, `start_conversation`, `set_typing`, `approvals`, `approve_reply`, `reject_reply` |
 | `ads()` | `list`, `external`, `boostable`, `connections`, `sources`, `authorize_meta`, `delete_connection`, `boost`, `create`, `refresh`, `set_status`, `delete`, `audiences`, `create_audience`, `search_targeting`, `lead_forms`, `create_lead_form`, `leads`, `tree`, `create_campaign`, `campaign`, `update_campaign`, `delete_campaign`, `duplicate_campaign`, `create_ad_set`, `ad_set`, `update_ad_set`, `delete_ad_set`, `duplicate_ad_set`, `create_network_ad`, `network_ad`, `update_network_ad`, `delete_network_ad`, `duplicate_network_ad`, `set_statuses`, `creatives`, `create_creative`, `creative`, `delete_creative`, `audience`, `update_audience`, `delete_audience`, `add_audience_users`, `estimate_reach`, `insights`, `ad_insights`, `lead_form`, `archive_lead_form`, `leads_feed`, `lead_pages`, `subscribe_lead_page`, `unsubscribe_lead_page` |
-| `validate()` | `post`, `length`, `media` |
+| `validate()` | `post`, `length`, `media`, `subreddit` |
 
 `account_groups()` needs the `accounts` scope. `inbox()` needs the `inbox` scope and `ads()` the `ads` scope; `boost`, `create`, `set_status`,
 `delete`, `set_statuses` and every create, update, delete and duplicate on campaigns, ad sets and network ads

@@ -29,6 +29,10 @@ pub struct Account {
     pub health_status: Option<HealthStatus>,
     #[serde(default)]
     pub last_health_check: Option<String>,
+    /// True when the account was connected before a permission it now needs was
+    /// asked for. Reconnecting it is the fix.
+    #[serde(default)]
+    pub reconnect_required: bool,
 }
 
 /// The workspace an account belongs to, as `GET /accounts/{id}` reports it.
@@ -446,5 +450,93 @@ impl CreateAccount {
     pub fn avatar(mut self, avatar: impl Into<String>) -> Self {
         self.avatar = Some(avatar.into());
         self
+    }
+}
+
+/// A subreddit a Reddit account is in, or its own profile page.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RedditSubreddit {
+    /// The name, without the `r/` prefix.
+    pub name: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub subscribers: Option<u64>,
+    #[serde(default)]
+    pub over18: bool,
+    /// False where the account may read but not submit.
+    #[serde(default)]
+    pub can_post: bool,
+    /// Whether the subreddit offers post flairs at all.
+    #[serde(default)]
+    pub flair_enabled: bool,
+    #[serde(default)]
+    pub icon_url: Option<String>,
+    /// Where posts go when a post names no subreddit.
+    #[serde(default)]
+    pub is_default: bool,
+}
+
+/// One rule a subreddit publishes. `applies_to` is `link`, `comment` or `all`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RedditSubredditRule {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub applies_to: Option<String>,
+}
+
+/// A subreddit's rules, in its own order.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RedditSubredditRules {
+    #[serde(default)]
+    pub subreddit: String,
+    #[serde(default)]
+    pub rules: Vec<RedditSubredditRule>,
+}
+
+/// A post flair, valid only in the subreddit it came from.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RedditFlair {
+    pub id: String,
+    #[serde(default)]
+    pub text: String,
+    /// Whether the label may be replaced with your own text.
+    #[serde(default)]
+    pub editable: bool,
+}
+
+/// The post flairs one subreddit offers.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RedditFlairs {
+    #[serde(default)]
+    pub subreddit: String,
+    #[serde(default)]
+    pub flairs: Vec<RedditFlair>,
+}
+
+/// Where posts go when a post names none. `None` means the account's own profile page.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RedditDefaultSubreddit {
+    #[serde(default)]
+    pub subreddit: Option<String>,
+}
+
+/// The body of `PUT /accounts/{id}/reddit/default-subreddit`.
+#[derive(Debug, Clone, Serialize)]
+pub struct SetRedditDefaultSubreddit {
+    /// `None` falls back to the account's own profile page.
+    pub subreddit: Option<String>,
+}
+
+impl SetRedditDefaultSubreddit {
+    pub fn new(subreddit: Option<String>) -> Self {
+        Self { subreddit }
     }
 }

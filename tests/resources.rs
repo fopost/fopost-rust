@@ -10,9 +10,9 @@ use fopost::models::{
     AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceSpec, BoostPost, CreateAccountGroup,
     CreateAudience, CreateAutomation, CreateWebhook, InboxItemState, InboxItemType, InboxReply,
     InboxSort, InsightsBreakdown, InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts,
-    ListInbox, MarkThreadRead, Platform, SetAdStatuses, SignalLevel, StartInboxConversation,
-    TelegramBotCommand, TriggerType, UpdateInboxItem, UpdateSlackIdentity, ValidateLength,
-    ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
+    ListInbox, MarkThreadRead, Platform, SetAdStatuses, SetRedditDefaultSubreddit, SignalLevel,
+    StartInboxConversation, TelegramBotCommand, TriggerType, UpdateInboxItem, UpdateSlackIdentity,
+    ValidateLength, ValidateMedia, ValidateMediaItem, ValidatePost, VoteInboxItem, WebhookEvent,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1464,4 +1464,126 @@ async fn validating_media_sends_the_url_and_reads_the_type_field() {
     assert_eq!(result.size, 1024);
     assert_eq!(result.mime_type.as_deref(), Some("image/png"));
     assert_eq!(result.media_type.as_deref(), Some("image"));
+}
+
+#[tokio::test]
+async fn reddit_reads_unwrap_the_envelope_and_pin_their_paths() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/reddit/subreddits"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{
+                "name": "webdev", "title": "Web Development", "subscribers": 2_000_000,
+                "over18": false, "canPost": true, "flairEnabled": true,
+                "iconUrl": null, "isDefault": true
+            }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/reddit/subreddits/webdev/rules"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"subreddit": "webdev", "rules": [
+                {"name": "No self promotion", "description": "Keep it useful", "appliesTo": "link"}
+            ]}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/reddit/flairs"))
+        .and(query_param("subreddit", "webdev"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"subreddit": "webdev", "flairs": [
+                {"id": "flair-1", "text": "Showoff Saturday", "editable": false}
+            ]}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let accounts = client.accounts();
+    let subreddits = accounts.reddit_subreddits("acc_1").await.unwrap();
+    assert!(subreddits[0].is_default);
+    assert!(subreddits[0].flair_enabled);
+    let rules = accounts
+        .reddit_subreddit_rules("acc_1", "webdev")
+        .await
+        .unwrap();
+    assert_eq!(rules.rules[0].applies_to.as_deref(), Some("link"));
+    let flairs = accounts.reddit_flairs("acc_1", "webdev").await.unwrap();
+    assert_eq!(flairs.flairs[0].id, "flair-1");
+}
+
+#[tokio::test]
+async fn the_default_subreddit_sends_null_to_fall_back_to_the_profile_page() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/v1/accounts/acc_1/reddit/default-subreddit"))
+        .and(body_json(serde_json::json!({"subreddit": null})))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"subreddit": null}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let result = client
+        .accounts()
+        .set_reddit_default_subreddit("acc_1", &SetRedditDefaultSubreddit::new(None))
+        .await
+        .unwrap();
+    assert!(result.subreddit.is_none());
+}
+
+#[tokio::test]
+async fn validating_a_subreddit_names_the_account_it_reads_as() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/validate/subreddit"))
+        .and(query_param("account_id", "acc_1"))
+        .and(query_param("name", "webdev"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"subreddit": "webdev", "exists": true, "can_post": true,
+                     "over_18": false, "flair_enabled": true, "ok": true}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let check = client
+        .validate()
+        .subreddit("acc_1", "webdev")
+        .await
+        .unwrap();
+    assert!(check.ok);
+}
+
+#[tokio::test]
+async fn voting_sends_the_direction() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/inbox/i_1/vote"))
+        .and(body_json(serde_json::json!({"direction": "down"})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"id": "i_1", "platform": "reddit", "type": "comment", "state": "unread",
+                     "vote": "down", "canVote": true}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let item = client
+        .inbox()
+        .vote("i_1", &VoteInboxItem::new("down"))
+        .await
+        .unwrap();
+    assert_eq!(item.vote.as_deref(), Some("down"));
+    assert!(item.can_vote);
 }
