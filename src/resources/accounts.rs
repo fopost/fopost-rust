@@ -7,7 +7,8 @@ use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
     Account, AccountAnalyticsHistory, AccountCreated, AccountDetail, AccountHealth, AccountMoved,
     AccountRenamed, AccountsHealthSummary, Community, CommunitySearchResult, CreateAccount,
-    CredentialCheck, ListAccounts, Message, PrimaryToggled, TokenRefreshed,
+    CredentialCheck, ListAccounts, Message, PrimaryToggled, TelegramBotCommand,
+    TelegramBotCommands, TelegramConnectCode, TelegramConnectStatus, TokenRefreshed,
 };
 
 /// Connected accounts, their health, and their X communities.
@@ -86,6 +87,91 @@ impl Accounts<'_> {
                 &format!("/accounts/{id}/move"),
                 None,
                 Some(&payload),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Mint a one-time code, valid for 15 minutes. Sending its `command` to the bot
+    /// in a chat connects that chat. `workspace_id` may be `None` for a key bound
+    /// to one workspace.
+    pub async fn create_telegram_connect_code(
+        &self,
+        workspace_id: Option<&str>,
+    ) -> Result<TelegramConnectCode> {
+        let payload = match workspace_id {
+            Some(id) => serde_json::json!({ "workspaceId": id }),
+            None => serde_json::json!({}),
+        };
+        let body: Envelope<TelegramConnectCode> = self
+            .http
+            .send(
+                Method::POST,
+                "/accounts/telegram/connect-code",
+                None,
+                Some(&payload),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Whether a connect code is still pending, connected a chat, failed, or expired.
+    pub async fn telegram_connect_status(&self, code: &str) -> Result<TelegramConnectStatus> {
+        let query: Query = vec![("code", code.to_string())];
+        let body: Envelope<TelegramConnectStatus> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                "/accounts/telegram/connect-code/status",
+                Some(query),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// The command menu the bot shows in a connected chat.
+    pub async fn telegram_bot_commands(&self, id: &str) -> Result<TelegramBotCommands> {
+        let body: Envelope<TelegramBotCommands> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/telegram/commands"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Replace the command menu for a connected chat with 1-100 commands.
+    pub async fn set_telegram_bot_commands(
+        &self,
+        id: &str,
+        commands: &[TelegramBotCommand],
+    ) -> Result<TelegramBotCommands> {
+        let payload = serde_json::json!({ "commands": commands });
+        let body: Envelope<TelegramBotCommands> = self
+            .http
+            .send(
+                Method::PUT,
+                &format!("/accounts/{id}/telegram/commands"),
+                None,
+                Some(&payload),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Clear the command menu for a connected chat.
+    pub async fn delete_telegram_bot_commands(&self, id: &str) -> Result<TelegramBotCommands> {
+        let body: Envelope<TelegramBotCommands> = self
+            .http
+            .send::<_, ()>(
+                Method::DELETE,
+                &format!("/accounts/{id}/telegram/commands"),
+                None,
+                None,
             )
             .await?;
         Ok(body.data)
