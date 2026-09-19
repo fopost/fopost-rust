@@ -117,6 +117,27 @@ async fn a_thread_is_several_content_blocks() {
 }
 
 #[tokio::test]
+async fn an_account_group_is_sent_alongside_the_accounts() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/posts"))
+        .and(body_json(serde_json::json!({
+            "workspace_id": "ws_1",
+            "accounts": [],
+            "account_group_id": "grp_1",
+            "content": [{"text": "Hello from Rust", "media": []}]
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(post_fixture()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let body = CreatePost::text("ws_1", "Hello from Rust").account_group("grp_1");
+    client.posts().create(&body).await.unwrap();
+}
+
+#[tokio::test]
 async fn publish_unwraps_the_envelope_and_reads_the_deliveries() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
