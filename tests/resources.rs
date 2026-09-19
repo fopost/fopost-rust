@@ -8,8 +8,8 @@ use common::{account_fixture, client};
 use fopost::models::{
     AdBudget, AdGoal, AdKind, AdStatus, AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceSpec,
     BoostPost, CreateAudience, CreateAutomation, CreateWebhook, InboxItemState, InboxItemType,
-    InboxSort, LeadsQuery, ListInbox, MarkThreadRead, Platform, TriggerType, UpdateInboxItem,
-    WebhookEvent,
+    InboxSort, LeadsQuery, ListInbox, MarkThreadRead, Platform, SignalLevel, TriggerType,
+    UpdateInboxItem, ValidateLength, ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
 };
 use wiremock::matchers::{body_json, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -560,4 +560,125 @@ async fn leads_send_the_cursor_and_read_the_next_one() {
         .unwrap();
     assert_eq!(page.leads[0].fields[0].values[0], "Morgan Lee");
     assert_eq!(page.next_cursor.as_deref(), Some("cur_2"));
+}
+
+#[tokio::test]
+async fn validating_a_post_sends_the_platforms_and_media_and_reads_each_platform() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/validate/post"))
+        .and(body_json(serde_json::json!({
+            "platforms": ["twitter", "bluesky"],
+            "content": "Hello from Rust",
+            "media": [{"url": "https://cdn.yourbrand.com/a.png", "mime_type": "image/png", "size": 1024}]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "ready": false,
+                "platforms": [
+                    {"platform": "twitter", "ready": true, "issues": [], "score": 82,
+                     "signals": [{"level": "info", "code": "has_media", "message": "Has media"}]},
+                    {"platform": "bluesky", "ready": false, "issues": ["media_too_large"], "signals": []}
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let result = client
+        .validate()
+        .post(
+            &ValidatePost::new(["twitter", "bluesky"])
+                .content("Hello from Rust")
+                .media([
+                    ValidateMediaItem::new("https://cdn.yourbrand.com/a.png", "image/png")
+                        .size(1024),
+                ]),
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.ready);
+    assert_eq!(result.platforms.len(), 2);
+    assert_eq!(result.platforms[0].score, Some(82.0));
+    assert_eq!(result.platforms[0].signals[0].level, SignalLevel::Info);
+    assert_eq!(result.platforms[1].issues, ["media_too_large"]);
+    assert_eq!(result.platforms[1].score, None);
+}
+
+#[tokio::test]
+async fn validating_length_sends_the_text_and_reads_a_null_limit() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/validate/length"))
+        .and(body_json(serde_json::json!({
+            "text": "Hello from Rust",
+            "platforms": ["twitter", "telegram"]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "ok": true,
+                "platforms": [
+                    {"platform": "twitter", "length": 15, "limit": 280, "unit": "chars", "ok": true, "signals": []},
+                    {"platform": "telegram", "length": 15, "limit": null, "unit": "bytes", "ok": true, "signals": []}
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let result = client
+        .validate()
+        .length(&ValidateLength::new(
+            "Hello from Rust",
+            ["twitter", "telegram"],
+        ))
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    assert_eq!(result.platforms[0].limit, Some(280));
+    assert_eq!(result.platforms[0].unit, "chars");
+    assert_eq!(result.platforms[1].limit, None);
+    assert_eq!(result.platforms[1].length, 15);
+}
+
+#[tokio::test]
+async fn validating_media_sends_the_url_and_reads_the_type_field() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/validate/media"))
+        .and(body_json(
+            serde_json::json!({"url": "https://cdn.yourbrand.com/a.png"}),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "ok": true,
+                "issues": [],
+                "name": "a.png",
+                "size": 1024,
+                "mime_type": "image/png",
+                "type": "image"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let result = client
+        .validate()
+        .media(&ValidateMedia::new("https://cdn.yourbrand.com/a.png"))
+        .await
+        .unwrap();
+
+    assert!(result.ok);
+    assert_eq!(result.name, "a.png");
+    assert_eq!(result.size, 1024);
+    assert_eq!(result.mime_type.as_deref(), Some("image/png"));
+    assert_eq!(result.media_type.as_deref(), Some("image"));
 }
