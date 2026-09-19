@@ -9,6 +9,7 @@
 
 #![allow(missing_docs)]
 
+pub mod account_groups;
 pub mod accounts;
 pub mod ads;
 pub mod analytics;
@@ -22,6 +23,7 @@ pub mod validate;
 pub mod webhooks;
 pub mod workspaces;
 
+pub use account_groups::*;
 pub use accounts::*;
 pub use ads::*;
 pub use analytics::*;

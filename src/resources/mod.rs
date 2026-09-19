@@ -1,5 +1,6 @@
 //! One module per API group. Reach them through the [`crate::Client`].
 
+pub mod account_groups;
 pub mod accounts;
 pub mod ads;
 pub mod analytics;
@@ -12,6 +13,7 @@ pub mod validate;
 pub mod webhooks;
 pub mod workspaces;
 
+pub use account_groups::AccountGroups;
 pub use accounts::Accounts;
 pub use ads::Ads;
 pub use analytics::Analytics;
