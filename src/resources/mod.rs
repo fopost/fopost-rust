@@ -8,6 +8,7 @@ pub mod inbox;
 pub mod labels;
 pub mod media;
 pub mod posts;
+pub mod validate;
 pub mod webhooks;
 pub mod workspaces;
 
@@ -19,5 +20,6 @@ pub use inbox::Inbox;
 pub use labels::Labels;
 pub use media::Media;
 pub use posts::Posts;
+pub use validate::Validate;
 pub use webhooks::Webhooks;
 pub use workspaces::Workspaces;

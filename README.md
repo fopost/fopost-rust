@@ -92,10 +92,11 @@ workspace answers `403`.
 | `media()` | `list`, `upload`, `presign`, `complete`, `upload_direct`, `delete` |
 | `inbox()` | `list`, `threads`, `conversations`, `unread_count`, `accounts`, `platforms`, `mark_thread_read`, `refresh`, `update`, `reply`, `hide`, `unhide`, `delete`, `approvals`, `approve_reply`, `reject_reply` |
 | `ads()` | `list`, `external`, `boostable`, `connections`, `sources`, `authorize_meta`, `delete_connection`, `boost`, `create`, `refresh`, `set_status`, `delete`, `audiences`, `create_audience`, `search_targeting`, `lead_forms`, `create_lead_form`, `leads` |
+| `validate()` | `post`, `length`, `media` |
 
 `inbox()` needs the `inbox` scope and `ads()` the `ads` scope; `boost`, `create`, `set_status` and
 `delete` on `ads()` spend money and also need `publish`. A boost or ad starts paused unless you pass
-`.paused(false)`.
+`.paused(false)`. `validate()` needs the `posts` scope and stores nothing.
 
 That is every endpoint the API documents. Anything not yet wrapped is reachable through
 `client.request(method, path, query, body)`, which gets the same auth, retries, and error handling.

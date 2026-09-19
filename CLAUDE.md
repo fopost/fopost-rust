@@ -7,7 +7,7 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 Crate `fopost` on crates.io — the official Rust client for the FoPost REST API
 (`fopost.com`). Version `0.2.0`. It wraps the API's HTTP surface in resource accessors on
 `Client`: `posts()`, `accounts()`, `workspaces()`, `labels()`, `webhooks()`,
-`automations()`, `analytics()`, `media()`, `inbox()`, `ads()`.
+`automations()`, `analytics()`, `media()`, `inbox()`, `ads()`, `validate()`.
 
 Edition 2021, `rust-version = "1.88"` (the MSRV CI builds against). Async on `reqwest`
 0.12 + `tokio`; models are `serde`; errors are `thiserror`. Docs at docs.rs/fopost.
@@ -34,7 +34,7 @@ src/
   http.rs        HttpClient: headers, retry loop, Envelope<T>, Query/push_opt, decode
   error.rs       Error enum, ApiError
   models/        common posts accounts workspaces labels webhooks automations analytics media
-                 inbox ads
+                 inbox ads validate
   resources/     one module per group, each a borrowed struct holding &HttpClient
 ```
 
