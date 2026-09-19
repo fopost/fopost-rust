@@ -89,7 +89,7 @@ workspace answers `403`.
 | `labels()` | `list`, `get`, `create`, `update`, `delete` |
 | `webhooks()` | `list`, `create`, `update`, `delete`, `test` |
 | `automations()` | `list`, `get`, `create`, `update`, `delete`, `toggle`, `runs`, `get_run`, `stats`, `trigger` |
-| `analytics()` | `overview`, `time_series`, `top_posts`, `labels`, `posts_table`, `posting_streak`, `demographics`, `collect` |
+| `analytics()` | `overview`, `time_series`, `top_posts`, `labels`, `posts_table`, `posting_streak`, `demographics`, `collect`, `decay`, `frequency`, `timeline`, `changes`, `collect_post`, `native_posts` |
 | `media()` | `list`, `upload`, `presign`, `complete`, `upload_direct`, `delete` |
 | `inbox()` | `list`, `threads`, `conversations`, `unread_count`, `accounts`, `platforms`, `mark_thread_read`, `refresh`, `update`, `edit_comment`, `reply`, `reply_with`, `hide`, `unhide`, `delete`, `like`, `unlike`, `pin`, `unpin`, `react`, `start_conversation`, `set_typing`, `approvals`, `approve_reply`, `reject_reply` |
 | `ads()` | `list`, `external`, `boostable`, `connections`, `sources`, `authorize_meta`, `delete_connection`, `boost`, `create`, `refresh`, `set_status`, `delete`, `audiences`, `create_audience`, `search_targeting`, `lead_forms`, `create_lead_form`, `leads`, `tree`, `create_campaign`, `campaign`, `update_campaign`, `delete_campaign`, `duplicate_campaign`, `create_ad_set`, `ad_set`, `update_ad_set`, `delete_ad_set`, `duplicate_ad_set`, `create_network_ad`, `network_ad`, `update_network_ad`, `delete_network_ad`, `duplicate_network_ad`, `set_statuses`, `creatives`, `create_creative`, `creative`, `delete_creative`, `audience`, `update_audience`, `delete_audience`, `add_audience_users`, `estimate_reach`, `insights`, `ad_insights`, `lead_form`, `archive_lead_form`, `leads_feed`, `lead_pages`, `subscribe_lead_page`, `unsubscribe_lead_page` |
@@ -104,6 +104,52 @@ and deleting our own reply also need `publish`. A boost or ad starts paused unle
 
 That is every endpoint the API documents. Anything not yet wrapped is reachable through
 `client.request(method, path, query, body)`, which gets the same auth, retries, and error handling.
+
+## Analytics
+
+```rust
+use fopost::models::{AnalyticsQuery, MetricChangesQuery, NativePostsQuery};
+
+// How long a post keeps earning, from the repeated readings of each post
+let decay = client.analytics().decay(&AnalyticsQuery::new().days(30)).await?;
+println!("{:?}", decay.half_life_bucket); // Some("1h_3h")
+
+// Whether posting more earned more
+let cadence = client.analytics().frequency(&AnalyticsQuery::new().days(90)).await?;
+if let Some(best) = &cadence.best {
+    println!("{}", best.label); // "3-5 a week"
+}
+
+// Every reading held for one post, with what moved between them
+let timeline = client.analytics().timeline(&post.id).await?;
+
+// Mirror the metrics into your own store, without refetching everything
+let mut query = MetricChangesQuery::new();
+loop {
+    let page = client.analytics().changes(&query).await?;
+    save(&page.changes);
+    match (page.has_more, page.cursor) {
+        (true, Some(cursor)) => query = MetricChangesQuery::new().since(cursor),
+        _ => break,
+    }
+}
+
+// Refresh one post now instead of waiting for the next collection run
+client.analytics().collect_post(&post.id).await?;
+
+// Posts on the account that never went out through FoPost
+let native = client
+    .analytics()
+    .native_posts(&accounts[0].id, &NativePostsQuery::new())
+    .await?;
+```
+
+A post is addressed by its FoPost id or by its permalink, so a post made by
+hand on the network works the same way:
+
+```rust
+client.analytics().timeline("https://x.com/acme/status/1").await?;
+```
 
 ## Error handling
 

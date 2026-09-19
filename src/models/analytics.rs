@@ -462,6 +462,352 @@ pub struct CollectSummary {
     pub error_details: Vec<CollectError>,
 }
 
+// ─── Deeper analytics ────────────────────────────────────────────
+
+/// One age band of the content decay report.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecayBand {
+    #[serde(default)]
+    pub bucket: String,
+    #[serde(default)]
+    pub label: String,
+    /// Posts with at least one reading in this band.
+    #[serde(default)]
+    pub posts: u32,
+    #[serde(default)]
+    pub avg_engagements: f64,
+    #[serde(default)]
+    pub avg_impressions: f64,
+    /// Mean share of the post's final engagement reached by this age, 0-1.
+    /// `None` when nothing in the band had earned anything yet.
+    #[serde(default)]
+    pub share_of_final: Option<f64>,
+}
+
+/// How engagement accumulates as a post ages.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentDecay {
+    #[serde(default)]
+    pub days: u32,
+    /// Posts with a publish time and at least one later reading.
+    #[serde(default)]
+    pub posts_measured: u32,
+    /// First band where the average post had passed half its final engagement.
+    #[serde(default)]
+    pub half_life_bucket: Option<String>,
+    #[serde(default)]
+    pub bands: Vec<DecayBand>,
+}
+
+/// One week of posting. `week_start` is the Monday, UTC, as YYYY-MM-DD.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrequencyWeek {
+    #[serde(default)]
+    pub week_start: String,
+    #[serde(default)]
+    pub posts: u32,
+    #[serde(default)]
+    pub engagements: i64,
+    #[serde(default)]
+    pub avg_engagements_per_post: f64,
+}
+
+/// The weeks that shared a cadence, folded together.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrequencyBand {
+    #[serde(default)]
+    pub band: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub weeks: u32,
+    #[serde(default)]
+    pub posts: u32,
+    #[serde(default)]
+    pub avg_posts_per_week: f64,
+    #[serde(default)]
+    pub avg_engagements_per_post: f64,
+    /// Engagements over reach, impressions as the stand-in; `None` with neither.
+    #[serde(default)]
+    pub engagement_rate: Option<f64>,
+}
+
+/// Weekly cadence set against what each cadence earned per post.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PostingFrequency {
+    #[serde(default)]
+    pub days: u32,
+    #[serde(default)]
+    pub weeks: Vec<FrequencyWeek>,
+    #[serde(default)]
+    pub bands: Vec<FrequencyBand>,
+    /// The cadence that earned the most per post; `None` without posts.
+    #[serde(default)]
+    pub best: Option<FrequencyBand>,
+}
+
+/// What moved between one reading and the one before it.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineDelta {
+    #[serde(default)]
+    pub impressions: i64,
+    #[serde(default)]
+    pub reach: i64,
+    #[serde(default)]
+    pub engagements: i64,
+    #[serde(default)]
+    pub likes: i64,
+    #[serde(default)]
+    pub comments: i64,
+    #[serde(default)]
+    pub shares: i64,
+}
+
+/// One reading of a post.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelinePoint {
+    #[serde(default)]
+    pub at: String,
+    /// Minutes since publication; `None` when the network never said when.
+    #[serde(default)]
+    pub age_minutes: Option<i64>,
+    #[serde(default)]
+    pub impressions: Option<i64>,
+    #[serde(default)]
+    pub reach: Option<i64>,
+    #[serde(default)]
+    pub engagements: Option<i64>,
+    #[serde(default)]
+    pub likes: Option<i64>,
+    #[serde(default)]
+    pub comments: Option<i64>,
+    #[serde(default)]
+    pub shares: Option<i64>,
+    #[serde(default)]
+    pub video_views: Option<i64>,
+    #[serde(default)]
+    pub delta: TimelineDelta,
+}
+
+/// One delivery's readings: the same post on two networks decays differently.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineDelivery {
+    #[serde(default)]
+    pub account_id: String,
+    #[serde(default)]
+    pub platform: String,
+    #[serde(default)]
+    pub username: String,
+    #[serde(default)]
+    pub external_post_id: String,
+    #[serde(default)]
+    pub posted_at: Option<String>,
+    #[serde(default)]
+    pub points: Vec<TimelinePoint>,
+}
+
+/// Every reading held for one post, one timeline per delivery.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PostTimeline {
+    /// `None` when the post was made natively on the network.
+    #[serde(default)]
+    pub post_id: Option<String>,
+    #[serde(default)]
+    pub deliveries: Vec<TimelineDelivery>,
+}
+
+/// One reading, as the changes feed reports it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetricChange {
+    #[serde(default)]
+    pub account_id: String,
+    #[serde(default)]
+    pub platform: String,
+    #[serde(default)]
+    pub external_post_id: String,
+    /// `None` for a post made natively on the network.
+    #[serde(default)]
+    pub post_id: Option<String>,
+    #[serde(default)]
+    pub posted_at: Option<String>,
+    #[serde(default)]
+    pub fetched_at: String,
+    #[serde(default)]
+    pub impressions: Option<i64>,
+    #[serde(default)]
+    pub reach: Option<i64>,
+    #[serde(default)]
+    pub engagements: Option<i64>,
+    #[serde(default)]
+    pub likes: Option<i64>,
+    #[serde(default)]
+    pub comments: Option<i64>,
+    #[serde(default)]
+    pub shares: Option<i64>,
+}
+
+/// One page of readings. Feed `cursor` back as `since` to continue.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetricChangePage {
+    #[serde(default)]
+    pub since: String,
+    /// `None` when nothing changed.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default)]
+    pub has_more: bool,
+    #[serde(default)]
+    pub changes: Vec<MetricChange>,
+}
+
+/// What the on-demand refresh did for one delivery.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CollectPostDelivery {
+    #[serde(default)]
+    pub account_id: String,
+    #[serde(default)]
+    pub platform: String,
+    #[serde(default)]
+    pub external_post_id: String,
+    #[serde(default)]
+    pub collected: bool,
+    #[serde(default)]
+    pub fetched_at: Option<String>,
+    /// Why the refresh did not happen.
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+/// What one post's refresh managed.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CollectPostResult {
+    #[serde(default)]
+    pub collected: u32,
+    #[serde(default)]
+    pub deliveries: Vec<CollectPostDelivery>,
+}
+
+/// The freshest reading held for a post made outside FoPost.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativePostMetrics {
+    #[serde(default)]
+    pub impressions: Option<i64>,
+    #[serde(default)]
+    pub reach: Option<i64>,
+    #[serde(default)]
+    pub engagements: Option<i64>,
+    #[serde(default)]
+    pub likes: Option<i64>,
+    #[serde(default)]
+    pub comments: Option<i64>,
+    #[serde(default)]
+    pub shares: Option<i64>,
+    #[serde(default)]
+    pub video_views: Option<i64>,
+}
+
+/// A post on the account that never went out through FoPost.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativePost {
+    #[serde(default)]
+    pub external_post_id: String,
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub permalink: Option<String>,
+    #[serde(default)]
+    pub thumbnail_url: Option<String>,
+    #[serde(default)]
+    pub media_type: Option<String>,
+    #[serde(default)]
+    pub posted_at: Option<String>,
+    #[serde(default)]
+    pub fetched_at: String,
+    #[serde(default)]
+    pub metrics: NativePostMetrics,
+}
+
+/// Filters for the changes feed. `since` is an RFC 3339 timestamp; leaving it
+/// unset asks for the last seven days.
+#[derive(Debug, Clone, Default)]
+pub struct MetricChangesQuery {
+    pub since: Option<String>,
+    pub limit: Option<u32>,
+    pub workspace_id: Option<String>,
+    pub account_id: Option<String>,
+}
+
+impl MetricChangesQuery {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn since(mut self, since: impl Into<String>) -> Self {
+        self.since = Some(since.into());
+        self
+    }
+
+    pub fn limit(mut self, limit: u32) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    pub fn workspace(mut self, workspace_id: impl Into<String>) -> Self {
+        self.workspace_id = Some(workspace_id.into());
+        self
+    }
+
+    pub fn account(mut self, account_id: impl Into<String>) -> Self {
+        self.account_id = Some(account_id.into());
+        self
+    }
+}
+
+/// Pagination for the native-posts listing.
+#[derive(Debug, Clone, Default)]
+pub struct NativePostsQuery {
+    pub page: Option<u32>,
+    pub per_page: Option<u32>,
+    /// Keep only posts published in the last this many days.
+    pub days: Option<u32>,
+}
+
+impl NativePostsQuery {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn page(mut self, page: u32) -> Self {
+        self.page = Some(page);
+        self
+    }
+
+    pub fn per_page(mut self, per_page: u32) -> Self {
+        self.per_page = Some(per_page);
+        self
+    }
+
+    pub fn days(mut self, days: u32) -> Self {
+        self.days = Some(days);
+        self
+    }
+}
+
 /// Filters shared by most analytics endpoints.
 #[derive(Debug, Clone, Default)]
 pub struct AnalyticsQuery {
