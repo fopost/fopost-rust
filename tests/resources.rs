@@ -7,9 +7,10 @@ mod common;
 use common::{account_fixture, client};
 use fopost::models::{
     AdBudget, AdGoal, AdKind, AdStatus, AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceSpec,
-    BoostPost, CreateAudience, CreateAutomation, CreateWebhook, InboxItemState, InboxItemType,
-    InboxSort, LeadsQuery, ListInbox, MarkThreadRead, Platform, SignalLevel, TriggerType,
-    UpdateInboxItem, ValidateLength, ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
+    BoostPost, CreateAccountGroup, CreateAudience, CreateAutomation, CreateWebhook, InboxItemState,
+    InboxItemType, InboxSort, LeadsQuery, ListAccounts, ListInbox, MarkThreadRead, Platform,
+    SignalLevel, TriggerType, UpdateInboxItem, ValidateLength, ValidateMedia, ValidateMediaItem,
+    ValidatePost, WebhookEvent,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -34,6 +35,125 @@ async fn accounts_list_sends_the_camel_case_workspace_param() {
     assert_eq!(accounts.len(), 1);
     assert_eq!(accounts[0].workspace_id.as_deref(), Some("ws_1"));
     assert_eq!(accounts[0].is_primary, Some(true));
+}
+
+#[tokio::test]
+async fn accounts_list_with_sends_the_group_filter() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts"))
+        .and(query_param("group_id", "grp_1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{"id": "acc_1", "platform": "twitter", "name": "Client A", "platformName": "fopost"}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let accounts = client
+        .accounts()
+        .list_with(&ListAccounts::new().group("grp_1"))
+        .await
+        .unwrap();
+    assert_eq!(accounts[0].platform_name.as_deref(), Some("fopost"));
+}
+
+#[tokio::test]
+async fn renaming_an_account_to_none_sends_null() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/v1/accounts/acc_1"))
+        .and(body_json(serde_json::json!({"display_name": null})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"id": "acc_1", "name": "fopost", "platform_name": "fopost"}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let renamed = client.accounts().rename("acc_1", None).await.unwrap();
+    assert_eq!(renamed.platform_name.as_deref(), Some("fopost"));
+}
+
+#[tokio::test]
+async fn a_blocked_move_surfaces_the_conflict_and_its_tables() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/accounts/acc_1/move"))
+        .and(body_json(serde_json::json!({"workspace_id": "ws_2"})))
+        .respond_with(ResponseTemplate::new(409).set_body_json(serde_json::json!({
+            "error": "move_blocked",
+            "message": "blocked",
+            "blocking_tables": ["posts"]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let err = client
+        .accounts()
+        .move_to("acc_1", "ws_2")
+        .await
+        .unwrap_err();
+    assert_eq!(err.status(), Some(409));
+    assert_eq!(err.code(), Some("move_blocked"));
+    match err {
+        fopost::Error::Api(api) => {
+            assert_eq!(api.body.unwrap()["blocking_tables"][0], "posts")
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn creating_an_account_group_unwraps_the_envelope() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/account-groups"))
+        .and(body_json(serde_json::json!({
+            "workspace_id": "ws_1",
+            "name": "Clients",
+            "account_ids": ["acc_1"]
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "data": {"id": "grp_1", "name": "Clients", "account_ids": ["acc_1"]}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let group = client
+        .account_groups()
+        .create(&CreateAccountGroup::new("ws_1", "Clients").account_ids(["acc_1"]))
+        .await
+        .unwrap();
+    assert_eq!(group.account_ids, vec!["acc_1".to_string()]);
+}
+
+#[tokio::test]
+async fn setting_no_members_sends_an_empty_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/v1/account-groups/grp_1/members"))
+        .and(body_json(serde_json::json!({"account_ids": []})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"id": "grp_1", "name": "Clients", "account_ids": []}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let group = client
+        .account_groups()
+        .set_members("grp_1", Vec::<String>::new())
+        .await
+        .unwrap();
+    assert!(group.account_ids.is_empty());
 }
 
 #[tokio::test]

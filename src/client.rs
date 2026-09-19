@@ -5,8 +5,8 @@ use std::time::Duration;
 use crate::error::{Error, Result};
 use crate::http::{HttpClient, DEFAULT_BASE_URL, USER_AGENT};
 use crate::resources::{
-    Accounts, Ads, Analytics, Automations, Inbox, Labels, Media, Posts, Validate, Webhooks,
-    Workspaces,
+    AccountGroups, Accounts, Ads, Analytics, Automations, Inbox, Labels, Media, Posts, Validate,
+    Webhooks, Workspaces,
 };
 
 /// The environment variable the key is read from by [`Client::from_env`].
@@ -72,6 +72,11 @@ impl Client {
     /// Connected social accounts and their health.
     pub fn accounts(&self) -> Accounts<'_> {
         Accounts { http: &self.http }
+    }
+
+    /// Account groups: named sets of accounts a post can target at once.
+    pub fn account_groups(&self) -> AccountGroups<'_> {
+        AccountGroups { http: &self.http }
     }
 
     /// Workspaces.

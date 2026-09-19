@@ -16,6 +16,9 @@ pub struct Account {
     pub username: Option<String>,
     #[serde(default)]
     pub name: Option<String>,
+    /// The name on the platform; `name` is the display override when one is set.
+    #[serde(default)]
+    pub platform_name: Option<String>,
     #[serde(default)]
     pub avatar: Option<String>,
     #[serde(default)]
@@ -51,6 +54,9 @@ pub struct AccountDetail {
     pub username: Option<String>,
     #[serde(default)]
     pub name: Option<String>,
+    /// The name on the platform; `name` is the display override when one is set.
+    #[serde(default)]
+    pub platform_name: Option<String>,
     #[serde(default)]
     pub avatar: Option<String>,
     #[serde(default)]
@@ -59,6 +65,48 @@ pub struct AccountDetail {
     pub created_at: Option<String>,
     #[serde(default)]
     pub updated_at: Option<String>,
+}
+
+/// Filters for `GET /accounts`.
+#[derive(Debug, Clone, Default)]
+pub struct ListAccounts {
+    pub workspace_id: Option<String>,
+    /// Only the accounts in this account group.
+    pub group_id: Option<String>,
+}
+
+impl ListAccounts {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn workspace(mut self, workspace_id: impl Into<String>) -> Self {
+        self.workspace_id = Some(workspace_id.into());
+        self
+    }
+
+    pub fn group(mut self, group_id: impl Into<String>) -> Self {
+        self.group_id = Some(group_id.into());
+        self
+    }
+}
+
+/// An account's names after a rename.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AccountRenamed {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub platform_name: Option<String>,
+}
+
+/// Where an account lives after a move.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AccountMoved {
+    pub id: String,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
 }
 
 /// A newly connected account.
