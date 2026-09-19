@@ -10,9 +10,11 @@
 #![allow(missing_docs)]
 
 pub mod accounts;
+pub mod ads;
 pub mod analytics;
 pub mod automations;
 pub mod common;
+pub mod inbox;
 pub mod labels;
 pub mod media;
 pub mod posts;
@@ -20,9 +22,11 @@ pub mod webhooks;
 pub mod workspaces;
 
 pub use accounts::*;
+pub use ads::*;
 pub use analytics::*;
 pub use automations::*;
 pub use common::*;
+pub use inbox::*;
 pub use labels::*;
 pub use media::*;
 pub use posts::*;
