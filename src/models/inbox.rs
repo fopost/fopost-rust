@@ -175,9 +175,36 @@ pub struct InboxItem {
     #[serde(default)]
     pub hidden: bool,
     #[serde(default)]
+    pub liked: bool,
+    #[serde(default)]
+    pub pinned: bool,
+    /// Our reaction on a DM.
+    #[serde(default)]
+    pub reaction: Option<String>,
+    #[serde(default)]
+    pub edited_at: Option<String>,
+    #[serde(default)]
     pub can_hide: bool,
+    /// A comment someone left, or our own reply.
     #[serde(default)]
     pub can_delete: bool,
+    #[serde(default)]
+    pub can_like: bool,
+    /// Our own comment only.
+    #[serde(default)]
+    pub can_pin: bool,
+    /// Our own comment only.
+    #[serde(default)]
+    pub can_edit: bool,
+    #[serde(default)]
+    pub can_react: bool,
+    #[serde(default)]
+    pub can_send_media: bool,
+    #[serde(default)]
+    pub can_quick_reply: bool,
+    /// A DM can be opened with `start_conversation` and a `comment_id`.
+    #[serde(default)]
+    pub can_private_reply: bool,
     /// The FoPost post this sits under, when there is one.
     #[serde(default)]
     pub post: Option<PublishedPostRef>,
@@ -270,6 +297,9 @@ pub struct InboxAccount {
     pub dm_supported: bool,
     #[serde(default)]
     pub dm_pending_reason: Option<String>,
+    /// A new DM can be opened from this account by handle.
+    #[serde(default)]
+    pub can_start_conversation: bool,
 }
 
 /// What the inbox can read on a platform. Not tenant data.
@@ -671,6 +701,116 @@ impl UpdateInboxItem {
             snoozed_until: Some(until.into()),
         }
     }
+}
+
+/// The body of `POST /inbox/{id}/reply`, for a reply carrying media or quick replies.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct InboxReply {
+    /// Required unless `media_ids` is given.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// Media library ids to attach to a DM, at most 10. Only where `can_send_media` is true.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub media_ids: Vec<String>,
+    /// Answer buttons under a DM, at most 13 of up to 20 characters. Only where
+    /// `can_quick_reply` is true.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub quick_replies: Vec<String>,
+}
+
+impl InboxReply {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn text(mut self, text: impl Into<String>) -> Self {
+        self.text = Some(text.into());
+        self
+    }
+
+    pub fn media_ids<I, S>(mut self, media_ids: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.media_ids = media_ids.into_iter().map(Into::into).collect();
+        self
+    }
+
+    pub fn quick_replies<I, S>(mut self, quick_replies: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.quick_replies = quick_replies.into_iter().map(Into::into).collect();
+        self
+    }
+}
+
+/// The body of `POST /inbox/conversations`: a DM by handle, or a private reply to a comment.
+#[derive(Debug, Clone, Serialize)]
+pub struct StartInboxConversation {
+    /// The account to send from, with `handle`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    /// Who to message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
+    /// An inbox comment to answer privately instead. Only where `can_private_reply` is true.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment_id: Option<String>,
+    pub text: String,
+    /// Media library ids to attach, at most 10.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub media_ids: Vec<String>,
+}
+
+impl StartInboxConversation {
+    /// Message `handle` from `account_id`. Only where the account's
+    /// `can_start_conversation` is true.
+    pub fn handle(
+        account_id: impl Into<String>,
+        handle: impl Into<String>,
+        text: impl Into<String>,
+    ) -> Self {
+        Self {
+            account_id: Some(account_id.into()),
+            handle: Some(handle.into()),
+            comment_id: None,
+            text: text.into(),
+            media_ids: Vec::new(),
+        }
+    }
+
+    /// Answer an inbox comment privately, by DM (Facebook, Instagram).
+    pub fn private_reply(comment_id: impl Into<String>, text: impl Into<String>) -> Self {
+        Self {
+            account_id: None,
+            handle: None,
+            comment_id: Some(comment_id.into()),
+            text: text.into(),
+            media_ids: Vec::new(),
+        }
+    }
+
+    pub fn media_ids<I, S>(mut self, media_ids: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.media_ids = media_ids.into_iter().map(Into::into).collect();
+        self
+    }
+}
+
+/// The answer to `POST /inbox/conversations`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxConversationStarted {
+    #[serde(default)]
+    pub conversation_id: Option<String>,
+    #[serde(default)]
+    pub item: Option<InboxItem>,
 }
 
 /// Where a sent reply landed on the platform.

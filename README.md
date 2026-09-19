@@ -10,7 +10,7 @@ platforms from your code.
 
 ```toml
 [dependencies]
-fopost = "0.2"
+fopost = "0.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
@@ -91,12 +91,14 @@ workspace answers `403`.
 | `automations()` | `list`, `get`, `create`, `update`, `delete`, `toggle`, `runs`, `get_run`, `stats`, `trigger` |
 | `analytics()` | `overview`, `time_series`, `top_posts`, `labels`, `posts_table`, `posting_streak`, `demographics`, `collect` |
 | `media()` | `list`, `upload`, `presign`, `complete`, `upload_direct`, `delete` |
-| `inbox()` | `list`, `threads`, `conversations`, `unread_count`, `accounts`, `platforms`, `mark_thread_read`, `refresh`, `update`, `reply`, `hide`, `unhide`, `delete`, `approvals`, `approve_reply`, `reject_reply` |
+| `inbox()` | `list`, `threads`, `conversations`, `unread_count`, `accounts`, `platforms`, `mark_thread_read`, `refresh`, `update`, `edit_comment`, `reply`, `reply_with`, `hide`, `unhide`, `delete`, `like`, `unlike`, `pin`, `unpin`, `react`, `start_conversation`, `set_typing`, `approvals`, `approve_reply`, `reject_reply` |
 | `ads()` | `list`, `external`, `boostable`, `connections`, `sources`, `authorize_meta`, `delete_connection`, `boost`, `create`, `refresh`, `set_status`, `delete`, `audiences`, `create_audience`, `search_targeting`, `lead_forms`, `create_lead_form`, `leads` |
 | `validate()` | `post`, `length`, `media` |
 
 `account_groups()` needs the `accounts` scope. `inbox()` needs the `inbox` scope and `ads()` the `ads` scope; `boost`, `create`, `set_status` and
-`delete` on `ads()` spend money and also need `publish`. A boost or ad starts paused unless you pass
+`delete` on `ads()` spend money and also need `publish`. On `inbox()`, `edit_comment`, `like`, `unlike`, `pin`,
+`unpin`, `react`, `start_conversation`, `set_typing`, a `reply_with` carrying media or quick replies,
+and deleting our own reply also need `publish`. A boost or ad starts paused unless you pass
 `.paused(false)`. `validate()` needs the `posts` scope and stores nothing.
 
 That is every endpoint the API documents. Anything not yet wrapped is reachable through
@@ -203,7 +205,7 @@ println!("{}", uploaded.url);
 To use `native-tls` instead, turn the defaults off and name what you want back:
 
 ```toml
-fopost = { version = "0.2", default-features = false, features = ["native-tls", "multipart"] }
+fopost = { version = "0.3", default-features = false, features = ["native-tls", "multipart"] }
 ```
 
 ## Forward compatibility

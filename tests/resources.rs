@@ -8,9 +8,9 @@ use common::{account_fixture, client};
 use fopost::models::{
     AdBudget, AdGoal, AdKind, AdStatus, AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceSpec,
     BoostPost, CreateAccountGroup, CreateAudience, CreateAutomation, CreateWebhook, InboxItemState,
-    InboxItemType, InboxSort, LeadsQuery, ListAccounts, ListInbox, MarkThreadRead, Platform,
-    SignalLevel, TriggerType, UpdateInboxItem, ValidateLength, ValidateMedia, ValidateMediaItem,
-    ValidatePost, WebhookEvent,
+    InboxItemType, InboxReply, InboxSort, LeadsQuery, ListAccounts, ListInbox, MarkThreadRead,
+    Platform, SignalLevel, StartInboxConversation, TriggerType, UpdateInboxItem, ValidateLength,
+    ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -510,6 +510,174 @@ async fn marking_a_thread_read_posts_snake_case_and_reads_the_count() {
         .await
         .unwrap();
     assert_eq!(updated, 4);
+}
+
+#[tokio::test]
+async fn liking_an_inbox_item_posts_without_a_body_and_reads_the_flags() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/inbox/ib_1/like"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "id": "ib_1",
+                "platform": "instagram",
+                "type": "comment",
+                "state": "read",
+                "liked": true,
+                "pinned": false,
+                "reaction": null,
+                "editedAt": "2026-09-02T09:00:00.000Z",
+                "canLike": true,
+                "canPin": false,
+                "canEdit": true,
+                "canReact": false,
+                "canSendMedia": false,
+                "canQuickReply": false,
+                "canPrivateReply": true
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let item = client.inbox().like("ib_1").await.unwrap();
+
+    assert!(item.liked);
+    assert!(!item.pinned);
+    assert!(item.can_like && item.can_edit && item.can_private_reply);
+    assert!(!item.can_send_media);
+    assert_eq!(item.edited_at.as_deref(), Some("2026-09-02T09:00:00.000Z"));
+}
+
+#[tokio::test]
+async fn reacting_with_none_sends_a_null_reaction() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/inbox/ib_1/react"))
+        .and(body_json(serde_json::json!({"reaction": null})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"id": "ib_1", "platform": "instagram", "type": "dm", "state": "read", "reaction": null}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let item = client.inbox().react("ib_1", None).await.unwrap();
+    assert_eq!(item.reaction, None);
+}
+
+#[tokio::test]
+async fn editing_a_comment_patches_only_the_text() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/v1/inbox/ib_1"))
+        .and(body_json(serde_json::json!({"text": "Fixed the typo"})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"id": "ib_1", "platform": "facebook", "type": "comment", "state": "read", "text": "Fixed the typo"}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let item = client
+        .inbox()
+        .edit_comment("ib_1", "Fixed the typo")
+        .await
+        .unwrap();
+    assert_eq!(item.text.as_deref(), Some("Fixed the typo"));
+}
+
+#[tokio::test]
+async fn a_reply_with_media_sends_snake_case_ids_and_quick_replies() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/inbox/ib_1/reply"))
+        .and(body_json(serde_json::json!({
+            "media_ids": ["med_1"],
+            "quick_replies": ["Yes", "No"]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "item": {"id": "ib_1", "platform": "instagram", "type": "dm", "state": "resolved"},
+                "reply": {"externalId": "m_1"}
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let sent = client
+        .inbox()
+        .reply_with(
+            "ib_1",
+            &InboxReply::new()
+                .media_ids(["med_1"])
+                .quick_replies(["Yes", "No"]),
+        )
+        .await
+        .unwrap();
+    assert_eq!(sent.reply.external_id.as_deref(), Some("m_1"));
+}
+
+#[tokio::test]
+async fn a_private_reply_starts_a_conversation_from_a_comment() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/inbox/conversations"))
+        .and(body_json(serde_json::json!({
+            "comment_id": "ib_1",
+            "text": "Sent you the details"
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "data": {
+                "conversationId": "conv_7",
+                "item": {"id": "ib_2", "platform": "instagram", "type": "dm", "state": "read", "direction": "outbound"}
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let started = client
+        .inbox()
+        .start_conversation(&StartInboxConversation::private_reply(
+            "ib_1",
+            "Sent you the details",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(started.conversation_id.as_deref(), Some("conv_7"));
+    assert_eq!(started.item.unwrap().id, "ib_2");
+}
+
+#[tokio::test]
+async fn typing_posts_the_account_and_reads_the_state() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/inbox/conversations/conv_7/typing"))
+        .and(body_json(
+            serde_json::json!({"account_id": "acc_1", "on": false}),
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"typing": false}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let typing = client
+        .inbox()
+        .set_typing("conv_7", "acc_1", false)
+        .await
+        .unwrap();
+    assert!(!typing);
 }
 
 #[tokio::test]

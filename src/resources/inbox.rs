@@ -1,6 +1,8 @@
 //! `client.inbox()` — comments, mentions and direct messages on connected accounts.
 //!
-//! Every call needs the `inbox` scope.
+//! Every call needs the `inbox` scope. The calls that act on the platform as the account
+//! (like, pin, react, edit, start a conversation, typing, a reply with media or quick
+//! replies, deleting our own reply) also need the `publish` scope.
 
 use reqwest::Method;
 use serde::Serialize;
@@ -8,9 +10,10 @@ use serde::Serialize;
 use crate::error::Result;
 use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
-    ApprovalDecision, InboxAccount, InboxApproval, InboxConversation, InboxItem, InboxPage,
-    InboxPlatform, InboxRefreshResult, InboxReplyResult, InboxThread, ListInbox,
-    ListInboxConversations, ListInboxThreads, MarkThreadRead, UpdateInboxItem,
+    ApprovalDecision, InboxAccount, InboxApproval, InboxConversation, InboxConversationStarted,
+    InboxItem, InboxPage, InboxPlatform, InboxRefreshResult, InboxReply, InboxReplyResult,
+    InboxThread, ListInbox, ListInboxConversations, ListInboxThreads, MarkThreadRead,
+    StartInboxConversation, UpdateInboxItem,
 };
 
 /// The inbox.
@@ -167,6 +170,25 @@ impl Inbox<'_> {
         Ok(body.data)
     }
 
+    /// Edit our own comment on the platform. Only where `can_edit` is true; also needs
+    /// `publish`.
+    pub async fn edit_comment(&self, id: &str, text: &str) -> Result<InboxItem> {
+        #[derive(Serialize)]
+        struct Edit<'a> {
+            text: &'a str,
+        }
+        let body: Envelope<InboxItem> = self
+            .http
+            .send(
+                Method::PATCH,
+                &format!("/inbox/{id}"),
+                None,
+                Some(&Edit { text }),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
     /// Send a reply on the platform as the connected account.
     pub async fn reply(&self, id: &str, text: &str) -> Result<InboxReplyResult> {
         #[derive(Serialize)]
@@ -180,6 +202,20 @@ impl Inbox<'_> {
                 &format!("/inbox/{id}/reply"),
                 None,
                 Some(&Reply { text }),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Send a reply carrying media or quick replies; either also needs `publish`.
+    pub async fn reply_with(&self, id: &str, reply: &InboxReply) -> Result<InboxReplyResult> {
+        let body: Envelope<InboxReplyResult> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/inbox/{id}/reply"),
+                None,
+                Some(reply),
             )
             .await?;
         Ok(body.data)
@@ -203,7 +239,8 @@ impl Inbox<'_> {
         Ok(body.data)
     }
 
-    /// Delete a comment on the platform.
+    /// Delete a comment on the platform, whether someone else wrote it or it is our own
+    /// reply. Deleting our own reply also needs `publish`.
     pub async fn delete(&self, id: &str) -> Result<bool> {
         #[derive(serde::Deserialize)]
         struct Deleted {
@@ -215,6 +252,109 @@ impl Inbox<'_> {
             .send::<_, ()>(Method::DELETE, &format!("/inbox/{id}"), None, None)
             .await?;
         Ok(body.data.deleted)
+    }
+
+    /// Like an item: a like, an upvote on Reddit, a favourite on Mastodon. Only where
+    /// `can_like` is true; also needs `publish`.
+    pub async fn like(&self, id: &str) -> Result<InboxItem> {
+        let body: Envelope<InboxItem> = self
+            .http
+            .send::<_, ()>(Method::POST, &format!("/inbox/{id}/like"), None, None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Remove our like. Only where `can_like` is true; also needs `publish`.
+    pub async fn unlike(&self, id: &str) -> Result<InboxItem> {
+        let body: Envelope<InboxItem> = self
+            .http
+            .send::<_, ()>(Method::POST, &format!("/inbox/{id}/unlike"), None, None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Pin our own comment. Only where `can_pin` is true; also needs `publish`.
+    pub async fn pin(&self, id: &str) -> Result<InboxItem> {
+        let body: Envelope<InboxItem> = self
+            .http
+            .send::<_, ()>(Method::POST, &format!("/inbox/{id}/pin"), None, None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Unpin our own comment. Only where `can_pin` is true; also needs `publish`.
+    pub async fn unpin(&self, id: &str) -> Result<InboxItem> {
+        let body: Envelope<InboxItem> = self
+            .http
+            .send::<_, ()>(Method::POST, &format!("/inbox/{id}/unpin"), None, None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// React to a message with an emoji, or pass `None` to remove ours. Only where
+    /// `can_react` is true; also needs `publish`.
+    pub async fn react(&self, id: &str, reaction: Option<&str>) -> Result<InboxItem> {
+        #[derive(Serialize)]
+        struct React<'a> {
+            reaction: Option<&'a str>,
+        }
+        let body: Envelope<InboxItem> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/inbox/{id}/react"),
+                None,
+                Some(&React { reaction }),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Open a DM, by handle or as a private reply to a comment. Also needs `publish`.
+    pub async fn start_conversation(
+        &self,
+        conversation: &StartInboxConversation,
+    ) -> Result<InboxConversationStarted> {
+        let body: Envelope<InboxConversationStarted> = self
+            .http
+            .send(
+                Method::POST,
+                "/inbox/conversations",
+                None,
+                Some(conversation),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Show (`on`) or clear the typing indicator in a DM thread. Returns whether it is now
+    /// shown. Also needs `publish`.
+    pub async fn set_typing(
+        &self,
+        conversation_id: &str,
+        account_id: &str,
+        on: bool,
+    ) -> Result<bool> {
+        #[derive(Serialize)]
+        struct Typing<'a> {
+            account_id: &'a str,
+            on: bool,
+        }
+        #[derive(serde::Deserialize)]
+        struct State {
+            #[serde(default)]
+            typing: bool,
+        }
+        let body: Envelope<State> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/inbox/conversations/{conversation_id}/typing"),
+                None,
+                Some(&Typing { account_id, on }),
+            )
+            .await?;
+        Ok(body.data.typing)
     }
 
     /// Replies an automation or the agent drafted that a person still has to send.
