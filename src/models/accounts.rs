@@ -109,6 +109,59 @@ pub struct AccountMoved {
     pub workspace_id: Option<String>,
 }
 
+/// A one-time code that connects a Telegram chat. Send `command` to the bot there.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TelegramConnectCode {
+    pub code: String,
+    /// What to send in the chat: `/connect <code>`.
+    pub command: String,
+    #[serde(default)]
+    pub bot_username: Option<String>,
+    #[serde(default)]
+    pub deep_link: Option<String>,
+    #[serde(default)]
+    pub group_link: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<String>,
+}
+
+/// Where a connect code stands.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TelegramConnectStatus {
+    /// `pending`, `connected`, `failed` or `expired`.
+    pub status: String,
+    /// The connected account, once `connected`.
+    #[serde(default)]
+    pub account_id: Option<String>,
+    /// `card_required`, `slot_taken` or `workspace_unavailable`, once `failed`.
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+/// One entry in the bot's command menu.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TelegramBotCommand {
+    /// 1-32 lowercase letters, digits or underscores, without the slash.
+    pub command: String,
+    pub description: String,
+}
+
+impl TelegramBotCommand {
+    pub fn new(command: impl Into<String>, description: impl Into<String>) -> Self {
+        Self {
+            command: command.into(),
+            description: description.into(),
+        }
+    }
+}
+
+/// The command menu the bot shows in a connected chat.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct TelegramBotCommands {
+    #[serde(default)]
+    pub commands: Vec<TelegramBotCommand>,
+}
+
 /// A newly connected account.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AccountCreated {
