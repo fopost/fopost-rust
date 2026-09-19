@@ -604,6 +604,9 @@ pub struct PostAnalytics {
 pub struct CreatePost {
     pub workspace_id: String,
     pub accounts: Vec<String>,
+    /// Every account in this group is added; `accounts` may then be empty.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_group_id: Option<String>,
     pub content: Vec<ContentBlock>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_type: Option<ContentType>,
@@ -647,6 +650,7 @@ impl CreatePost {
         Self {
             workspace_id: workspace_id.into(),
             accounts: Vec::new(),
+            account_group_id: None,
             content: content.into_iter().map(Into::into).collect(),
             content_type: None,
             artifact_type: None,
@@ -674,6 +678,12 @@ impl CreatePost {
     /// The social accounts to publish to.
     pub fn accounts<S: Into<String>>(mut self, accounts: impl IntoIterator<Item = S>) -> Self {
         self.accounts = accounts.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Post to every account in this account group, alongside any `accounts`.
+    pub fn account_group(mut self, group_id: impl Into<String>) -> Self {
+        self.account_group_id = Some(group_id.into());
         self
     }
 
