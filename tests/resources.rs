@@ -5,7 +5,12 @@
 mod common;
 
 use common::{account_fixture, client};
-use fopost::models::{AnalyticsQuery, CreateAutomation, CreateWebhook, TriggerType, WebhookEvent};
+use fopost::models::{
+    AdBudget, AdGoal, AdKind, AdStatus, AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceSpec,
+    BoostPost, CreateAudience, CreateAutomation, CreateWebhook, InboxItemState, InboxItemType,
+    InboxSort, LeadsQuery, ListInbox, MarkThreadRead, Platform, TriggerType, UpdateInboxItem,
+    WebhookEvent,
+};
 use wiremock::matchers::{body_json, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -252,4 +257,307 @@ async fn uploading_media_posts_a_multipart_body() {
         content_type.starts_with("multipart/form-data"),
         "{content_type}"
     );
+}
+
+#[tokio::test]
+async fn inbox_list_sends_snake_case_filters_and_reads_the_page_meta() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/inbox"))
+        .and(query_param("workspace_id", "ws_1"))
+        .and(query_param("type", "comment"))
+        .and(query_param("state", "unread"))
+        .and(query_param("post_external_id", "ext_9"))
+        .and(query_param("sort", "unanswered"))
+        .and(query_param("per_page", "10"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{
+                "id": "ib_1",
+                "workspaceId": "ws_1",
+                "platform": "instagram",
+                "type": "comment",
+                "state": "unread",
+                "direction": "inbound",
+                "authorHandle": "morgan.lee",
+                "text": "Love this",
+                "attachments": [{"kind": "image", "url": "https://api.fopost.com/v1/inbox/ib_1/attachments/0"}],
+                "createdAt": "2026-09-01T10:00:00.000Z",
+                "canReply": true,
+                "hidden": false,
+                "postContext": {"externalId": "ext_9", "isOwn": true, "published": {"id": "post_1", "title": null}},
+                "account": {"id": "acc_1", "platform": "instagram", "username": "yourbrand", "name": "Your Brand", "avatar": null}
+            }],
+            "meta": {"page": 1, "perPage": 10, "total": 23}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let page = client
+        .inbox()
+        .list(
+            &ListInbox::new()
+                .workspace("ws_1")
+                .item_type(InboxItemType::Comment)
+                .state(InboxItemState::Unread)
+                .post_external_id("ext_9")
+                .sort(InboxSort::Unanswered)
+                .per_page(10),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(page.len(), 1);
+    assert_eq!(page.meta.total, 23);
+    assert!(page.has_next());
+    let item = &page.items[0];
+    assert_eq!(item.item_type, InboxItemType::Comment);
+    assert_eq!(item.attachments[0].kind, "image");
+    assert_eq!(
+        item.post_context
+            .as_ref()
+            .unwrap()
+            .published
+            .as_ref()
+            .unwrap()
+            .id,
+        "post_1"
+    );
+    assert_eq!(item.account.as_ref().unwrap().platform, Platform::Instagram);
+}
+
+#[tokio::test]
+async fn snoozing_an_inbox_item_patches_a_camel_case_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/v1/inbox/ib_1"))
+        .and(body_json(serde_json::json!({
+            "state": "snoozed",
+            "snoozedUntil": "2026-09-02T09:00:00Z"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "id": "ib_1",
+                "platform": "instagram",
+                "type": "comment",
+                "state": "snoozed",
+                "snoozedUntil": "2026-09-02T09:00:00.000Z"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let item = client
+        .inbox()
+        .update(
+            "ib_1",
+            &UpdateInboxItem::snooze_until("2026-09-02T09:00:00Z"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(item.state, InboxItemState::Snoozed);
+    assert_eq!(
+        item.snoozed_until.as_deref(),
+        Some("2026-09-02T09:00:00.000Z")
+    );
+}
+
+#[tokio::test]
+async fn marking_a_thread_read_posts_snake_case_and_reads_the_count() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/inbox/read"))
+        .and(body_json(serde_json::json!({
+            "workspace_id": "ws_1",
+            "account_id": "acc_1",
+            "conversation_id": "conv_7"
+        })))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": {"updated": 4}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let updated = client
+        .inbox()
+        .mark_thread_read(&MarkThreadRead::conversation("ws_1", "acc_1", "conv_7"))
+        .await
+        .unwrap();
+    assert_eq!(updated, 4);
+}
+
+#[tokio::test]
+async fn boosting_a_post_serializes_the_camel_case_body_and_parses_the_ad() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/ads/boost"))
+        .and(body_json(serde_json::json!({
+            "workspaceId": "ws_1",
+            "connectionId": "conn_1",
+            "adAccountId": "act_123",
+            "postId": "post_1",
+            "accountId": "acc_1",
+            "name": "Autumn drop boost",
+            "goal": "engagement",
+            "budget": {"minor": 2000, "type": "daily"},
+            "targeting": {
+                "countries": ["US", "CA"],
+                "ageMin": 21,
+                "ageMax": 45,
+                "gender": "all",
+                "interests": [{"id": "6003", "name": "Coffee"}]
+            },
+            "paused": false
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "data": {
+                "id": "ad_1",
+                "workspaceId": "ws_1",
+                "kind": "boost",
+                "name": "Autumn drop boost",
+                "goal": "engagement",
+                "status": "active",
+                "effectiveStatus": "PENDING_REVIEW",
+                "adAccountId": "act_123",
+                "sourcePostId": "post_1",
+                "budgetMinor": 2000,
+                "budgetType": "daily",
+                "currency": "USD",
+                "targeting": {"countries": ["US", "CA"], "ageMin": 21, "ageMax": 45, "gender": "all"},
+                "insights": {"impressions": 0, "reach": 0, "clicks": 0, "spendMinor": 0},
+                "createdAt": "2026-09-01T10:00:00.000Z"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let ad = client
+        .ads()
+        .boost(
+            &BoostPost::new(
+                "ws_1",
+                "conn_1",
+                "act_123",
+                "post_1",
+                "acc_1",
+                "Autumn drop boost",
+                AdGoal::Engagement,
+                AdBudget::daily(2000),
+                AdTargeting::new(["US", "CA"], 21, 45)
+                    .interests([AdTargetingItem::new("6003", "Coffee")]),
+            )
+            .paused(false),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(ad.kind, AdKind::Boost);
+    assert_eq!(ad.status, Some(AdStatus::Active));
+    assert_eq!(ad.budget_minor, 2000);
+    assert_eq!(ad.targeting.countries, ["US", "CA"]);
+    assert_eq!(ad.insights.as_ref().unwrap().spend_minor, 0);
+}
+
+#[tokio::test]
+async fn pausing_an_ad_patches_with_the_workspace_in_the_query() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/v1/ads/ad_1"))
+        .and(query_param("workspace_id", "ws_1"))
+        .and(body_json(serde_json::json!({"status": "paused"})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"id": "ad_1", "kind": "ad", "name": "Launch", "status": "paused"}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let ad = client
+        .ads()
+        .set_status("ad_1", "ws_1", AdStatus::Paused)
+        .await
+        .unwrap();
+    assert_eq!(ad.status, Some(AdStatus::Paused));
+}
+
+#[tokio::test]
+async fn a_lookalike_audience_carries_its_subtype_tag() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/ads/audiences"))
+        .and(body_json(serde_json::json!({
+            "workspaceId": "ws_1",
+            "connectionId": "conn_1",
+            "adAccountId": "act_123",
+            "name": "Like our buyers",
+            "spec": {"subtype": "LOOKALIKE", "originAudienceId": "aud_1", "country": "US"}
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "data": {"id": "aud_2", "added": 0}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let created = client
+        .ads()
+        .create_audience(&CreateAudience::new(
+            "ws_1",
+            "conn_1",
+            "act_123",
+            "Like our buyers",
+            AudienceSpec::Lookalike {
+                origin_audience_id: "aud_1".into(),
+                country: "US".into(),
+                ratio: None,
+            },
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.id, "aud_2");
+}
+
+#[tokio::test]
+async fn leads_send_the_cursor_and_read_the_next_one() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/ads/lead-forms/form_1/leads"))
+        .and(query_param("connection_id", "conn_1"))
+        .and(query_param("page_id", "page_1"))
+        .and(query_param("after", "cur_1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "leads": [{
+                    "id": "lead_1",
+                    "fields": [{"name": "full_name", "values": ["Morgan Lee"]}],
+                    "isOrganic": false
+                }],
+                "nextCursor": "cur_2"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let page = client
+        .ads()
+        .leads(
+            "form_1",
+            &LeadsQuery::new("conn_1", "page_1").after("cur_1"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.leads[0].fields[0].values[0], "Morgan Lee");
+    assert_eq!(page.next_cursor.as_deref(), Some("cur_2"));
 }
