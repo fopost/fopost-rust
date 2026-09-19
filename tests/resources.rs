@@ -11,8 +11,8 @@ use fopost::models::{
     CreateAudience, CreateAutomation, CreateWebhook, InboxItemState, InboxItemType, InboxReply,
     InboxSort, InsightsBreakdown, InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts,
     ListInbox, MarkThreadRead, Platform, SetAdStatuses, SignalLevel, StartInboxConversation,
-    TelegramBotCommand, TriggerType, UpdateInboxItem, ValidateLength, ValidateMedia,
-    ValidateMediaItem, ValidatePost, WebhookEvent,
+    TelegramBotCommand, TriggerType, UpdateInboxItem, UpdateSlackIdentity, ValidateLength,
+    ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -208,6 +208,93 @@ async fn telegram_bot_commands_are_read_replaced_and_cleared() {
         .await
         .unwrap();
     assert!(cleared.commands.is_empty());
+}
+
+#[tokio::test]
+async fn slack_channels_members_and_identity_unwrap_the_envelope() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/slack/channels"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{"id": "C1", "name": "general", "is_private": false, "is_member": true, "is_current": true}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/slack/members"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{"id": "U1", "name": "sam", "real_name": "Sam Doe", "display_name": null, "avatar": null, "is_bot": false}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/slack/identity"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"username": "Launch Bot", "icon_url": null, "icon_emoji": ":rocket:"}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let accounts = client.accounts();
+    let channels = accounts.slack_channels("acc_1").await.unwrap();
+    assert!(channels[0].is_current);
+    let members = accounts.slack_members("acc_1").await.unwrap();
+    assert_eq!(members[0].real_name.as_deref(), Some("Sam Doe"));
+    assert!(members[0].display_name.is_none());
+    let identity = accounts.slack_identity("acc_1").await.unwrap();
+    assert_eq!(identity.icon_emoji.as_deref(), Some(":rocket:"));
+}
+
+#[tokio::test]
+async fn updating_the_slack_identity_omits_kept_fields_and_nulls_cleared_ones() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/v1/accounts/acc_1/slack/identity"))
+        .and(body_json(
+            serde_json::json!({"username": null, "icon_emoji": ":rocket:"}),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"username": null, "icon_url": null, "icon_emoji": ":rocket:"}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let update = UpdateSlackIdentity {
+        username: Some(None),
+        icon_emoji: Some(Some(":rocket:".into())),
+        ..Default::default()
+    };
+    let identity = client
+        .accounts()
+        .update_slack_identity("acc_1", &update)
+        .await
+        .unwrap();
+    assert!(identity.username.is_none());
+}
+
+#[tokio::test]
+async fn a_slack_webhook_connection_is_a_conflict() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/slack/channels"))
+        .respond_with(ResponseTemplate::new(409).set_body_json(serde_json::json!({
+            "error": "webhook_connection",
+            "message": "Reconnect with the Slack app"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let err = client.accounts().slack_channels("acc_1").await.unwrap_err();
+    assert_eq!(err.status(), Some(409));
+    assert_eq!(err.code(), Some("webhook_connection"));
 }
 
 #[tokio::test]
