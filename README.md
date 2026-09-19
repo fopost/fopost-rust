@@ -83,7 +83,8 @@ workspace answers `403`.
 | Namespace | Methods |
 | --- | --- |
 | `posts()` | `list`, `list_all`, `get`, `create`, `update`, `delete`, `duplicate`, `publish`, `retry`, `cancel`, `preflight`, `deliveries`, `publish_runs`, `analytics`, `bulk`, `validate_import`, `commit_import`, `rollback_import` |
-| `accounts()` | `list`, `get`, `create`, `delete`, `toggle_primary`, `validate`, `health`, `health_summary`, `refresh_token`, `analytics`, `communities`, `sync_communities`, `search_communities`, `add_community`, `remove_community` |
+| `accounts()` | `list`, `list_with`, `get`, `create`, `rename`, `move_to`, `delete`, `toggle_primary`, `validate`, `health`, `health_summary`, `refresh_token`, `analytics`, `communities`, `sync_communities`, `search_communities`, `add_community`, `remove_community` |
+| `account_groups()` | `list`, `get`, `create`, `update`, `delete`, `set_members` |
 | `workspaces()` | `list`, `get`, `create`, `update`, `delete`, `analytics` |
 | `labels()` | `list`, `get`, `create`, `update`, `delete` |
 | `webhooks()` | `list`, `create`, `update`, `delete`, `test` |
@@ -94,7 +95,7 @@ workspace answers `403`.
 | `ads()` | `list`, `external`, `boostable`, `connections`, `sources`, `authorize_meta`, `delete_connection`, `boost`, `create`, `refresh`, `set_status`, `delete`, `audiences`, `create_audience`, `search_targeting`, `lead_forms`, `create_lead_form`, `leads` |
 | `validate()` | `post`, `length`, `media` |
 
-`inbox()` needs the `inbox` scope and `ads()` the `ads` scope; `boost`, `create`, `set_status` and
+`account_groups()` needs the `accounts` scope. `inbox()` needs the `inbox` scope and `ads()` the `ads` scope; `boost`, `create`, `set_status` and
 `delete` on `ads()` spend money and also need `publish`. A boost or ad starts paused unless you pass
 `.paused(false)`. `validate()` needs the `posts` scope and stores nothing.
 
