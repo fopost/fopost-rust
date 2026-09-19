@@ -5,9 +5,9 @@ use reqwest::Method;
 use crate::error::Result;
 use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
-    Account, AccountAnalyticsHistory, AccountCreated, AccountDetail, AccountHealth,
-    AccountsHealthSummary, Community, CommunitySearchResult, CreateAccount, CredentialCheck,
-    Message, PrimaryToggled, TokenRefreshed,
+    Account, AccountAnalyticsHistory, AccountCreated, AccountDetail, AccountHealth, AccountMoved,
+    AccountRenamed, AccountsHealthSummary, Community, CommunitySearchResult, CreateAccount,
+    CredentialCheck, ListAccounts, Message, PrimaryToggled, TokenRefreshed,
 };
 
 /// Connected accounts, their health, and their X communities.
@@ -21,6 +21,18 @@ impl Accounts<'_> {
     pub async fn list(&self, workspace_id: Option<&str>) -> Result<Vec<Account>> {
         let mut query: Query = Vec::new();
         push_opt(&mut query, "workspaceId", workspace_id);
+        let body: Envelope<Vec<Account>> = self
+            .http
+            .send::<_, ()>(Method::GET, "/accounts", Some(query), None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Connected accounts matching the filters, e.g. one account group's.
+    pub async fn list_with(&self, filters: &ListAccounts) -> Result<Vec<Account>> {
+        let mut query: Query = Vec::new();
+        push_opt(&mut query, "workspaceId", filters.workspace_id.as_deref());
+        push_opt(&mut query, "group_id", filters.group_id.as_deref());
         let body: Envelope<Vec<Account>> = self
             .http
             .send::<_, ()>(Method::GET, "/accounts", Some(query), None)
@@ -43,6 +55,38 @@ impl Accounts<'_> {
         let body: Envelope<AccountCreated> = self
             .http
             .send(Method::POST, "/accounts", None, Some(account))
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Set the name shown instead of the platform name. `None` restores it.
+    pub async fn rename(&self, id: &str, display_name: Option<&str>) -> Result<AccountRenamed> {
+        let payload = serde_json::json!({ "display_name": display_name });
+        let body: Envelope<AccountRenamed> = self
+            .http
+            .send(
+                Method::PATCH,
+                &format!("/accounts/{id}"),
+                None,
+                Some(&payload),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Move an account to another workspace the caller owns. It leaves its account
+    /// groups. A `409` with code `move_blocked` lists the blockers in the body's
+    /// `blocking_tables`.
+    pub async fn move_to(&self, id: &str, workspace_id: &str) -> Result<AccountMoved> {
+        let payload = serde_json::json!({ "workspace_id": workspace_id });
+        let body: Envelope<AccountMoved> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/accounts/{id}/move"),
+                None,
+                Some(&payload),
+            )
             .await?;
         Ok(body.data)
     }
