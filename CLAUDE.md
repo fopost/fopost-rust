@@ -5,7 +5,7 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 ## What This Is
 
 Crate `fopost` on crates.io — the official Rust client for the FoPost REST API
-(`fopost.com`). Version `0.1.0`. It wraps the API's HTTP surface in resource accessors on
+(`fopost.com`). Version `0.2.0`. It wraps the API's HTTP surface in resource accessors on
 `Client`: `posts()`, `accounts()`, `workspaces()`, `labels()`, `webhooks()`,
 `automations()`, `analytics()`, `media()`, `inbox()`, `ads()`.
 

@@ -10,7 +10,7 @@ platforms from your code.
 
 ```toml
 [dependencies]
-fopost = "0.1"
+fopost = "0.2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
@@ -186,7 +186,7 @@ client.posts().create(&CreatePost::new(workspace_id, [block])).await?;
 To use `native-tls` instead, turn the defaults off and name what you want back:
 
 ```toml
-fopost = { version = "0.1", default-features = false, features = ["native-tls", "multipart"] }
+fopost = { version = "0.2", default-features = false, features = ["native-tls", "multipart"] }
 ```
 
 ## Forward compatibility
