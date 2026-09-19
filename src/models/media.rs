@@ -1,6 +1,8 @@
 //! The media library.
 
-use serde::Deserialize;
+use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
 
 use super::common::MediaType;
 
@@ -62,4 +64,46 @@ impl MediaUpload {
             bytes: bytes.into(),
         }
     }
+}
+
+/// What to ask for before uploading a file straight to storage.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresignUpload {
+    pub workspace_id: String,
+    pub filename: String,
+    pub mime_type: String,
+    /// Byte length of the file; the upload must send exactly this many.
+    pub size: u64,
+}
+
+impl PresignUpload {
+    pub fn new(
+        workspace_id: impl Into<String>,
+        filename: impl Into<String>,
+        mime_type: impl Into<String>,
+        size: u64,
+    ) -> Self {
+        Self {
+            workspace_id: workspace_id.into(),
+            filename: filename.into(),
+            mime_type: mime_type.into(),
+            size,
+        }
+    }
+}
+
+/// A one-off upload slot: PUT the bytes to `upload_url` with `headers`, then complete it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresignedUpload {
+    pub upload_id: String,
+    pub upload_url: String,
+    #[serde(default)]
+    pub method: Option<String>,
+    /// Sent verbatim on the upload; `Content-Type` is always among them.
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+    #[serde(default)]
+    pub expires_at: Option<String>,
 }

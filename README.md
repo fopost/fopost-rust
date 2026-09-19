@@ -89,7 +89,7 @@ workspace answers `403`.
 | `webhooks()` | `list`, `create`, `update`, `delete`, `test` |
 | `automations()` | `list`, `get`, `create`, `update`, `delete`, `toggle`, `runs`, `get_run`, `stats`, `trigger` |
 | `analytics()` | `overview`, `time_series`, `top_posts`, `labels`, `posts_table`, `posting_streak`, `demographics`, `collect` |
-| `media()` | `list`, `upload`, `delete` |
+| `media()` | `list`, `upload`, `presign`, `complete`, `upload_direct`, `delete` |
 | `inbox()` | `list`, `threads`, `conversations`, `unread_count`, `accounts`, `platforms`, `mark_thread_read`, `refresh`, `update`, `reply`, `hide`, `unhide`, `delete`, `approvals`, `approve_reply`, `reject_reply` |
 | `ads()` | `list`, `external`, `boostable`, `connections`, `sources`, `authorize_meta`, `delete_connection`, `boost`, `create`, `refresh`, `set_status`, `delete`, `audiences`, `create_audience`, `search_targeting`, `lead_forms`, `create_lead_form`, `leads` |
 | `validate()` | `post`, `length`, `media` |
@@ -173,6 +173,21 @@ let block = ContentBlock::text("Ship it").with_media([MediaItem::new(
 .alt("A product screenshot")]);
 
 client.posts().create(&CreatePost::new(workspace_id, [block])).await?;
+# Ok(()) }
+```
+
+Larger files can skip the API and go straight to storage. `upload_direct` reserves a slot with
+`presign`, PUTs the bytes to the returned url with the returned headers and no API key, then calls
+`complete` to land the file in the library. It needs no Cargo feature.
+
+```rust,no_run
+# async fn run(client: fopost::Client, workspace_id: &str) -> Result<(), fopost::Error> {
+let bytes = std::fs::read("clip.mp4").unwrap();
+let uploaded = client
+    .media()
+    .upload_direct(workspace_id, "clip.mp4", "video/mp4", bytes)
+    .await?;
+println!("{}", uploaded.url);
 # Ok(()) }
 ```
 

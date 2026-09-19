@@ -2,9 +2,9 @@
 
 use reqwest::Method;
 
-use crate::error::Result;
+use crate::error::{ApiError, Error, Result};
 use crate::http::{Envelope, HttpClient, Query};
-use crate::models::MediaLibraryItem;
+use crate::models::{MediaLibraryItem, PresignUpload, PresignedUpload, UploadedMedia};
 
 /// The media library.
 #[derive(Debug, Clone)]
@@ -21,6 +21,67 @@ impl Media<'_> {
             .send::<_, ()>(Method::GET, "/media", Some(query), None)
             .await?;
         Ok(body.data)
+    }
+
+    /// Reserve a direct-upload slot. PUT the bytes to `upload_url` with the returned
+    /// headers and a `Content-Length` equal to `size`, then call [`Self::complete`].
+    pub async fn presign(&self, input: &PresignUpload) -> Result<PresignedUpload> {
+        let body: Envelope<PresignedUpload> = self
+            .http
+            .send(Method::POST, "/media/presign", None, Some(input))
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Turn a finished direct upload into a library file.
+    pub async fn complete(&self, upload_id: &str) -> Result<UploadedMedia> {
+        let body: Envelope<UploadedMedia> = self
+            .http
+            .send::<_, ()>(
+                Method::POST,
+                &format!("/media/presign/{upload_id}/complete"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Upload one file straight to storage: presign, PUT the bytes, complete.
+    /// Needs no `multipart` feature.
+    pub async fn upload_direct(
+        &self,
+        workspace_id: &str,
+        filename: &str,
+        mime_type: &str,
+        data: Vec<u8>,
+    ) -> Result<UploadedMedia> {
+        let presigned = self
+            .presign(&PresignUpload::new(
+                workspace_id,
+                filename,
+                mime_type,
+                data.len() as u64,
+            ))
+            .await?;
+
+        // The slot is authorised by its url, so the API key stays home.
+        let mut request = self
+            .http
+            .inner()
+            .request(Method::PUT, &presigned.upload_url);
+        for (name, value) in &presigned.headers {
+            request = request.header(name, value);
+        }
+        let response = request.body(data).send().await?;
+        let status = response.status();
+        if !status.is_success() {
+            let text = response.text().await?;
+            let json = (!text.trim().is_empty()).then(|| serde_json::json!({ "message": text }));
+            return Err(Error::Api(ApiError::from_body(status.as_u16(), json, None)));
+        }
+
+        self.complete(&presigned.upload_id).await
     }
 
     /// Delete a file. Posts already published keep what the platform stored.

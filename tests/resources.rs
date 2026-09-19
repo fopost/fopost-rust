@@ -11,7 +11,7 @@ use fopost::models::{
     InboxSort, LeadsQuery, ListInbox, MarkThreadRead, Platform, SignalLevel, TriggerType,
     UpdateInboxItem, ValidateLength, ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
 };
-use wiremock::matchers::{body_json, method, path, query_param};
+use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
@@ -560,6 +560,118 @@ async fn leads_send_the_cursor_and_read_the_next_one() {
         .unwrap();
     assert_eq!(page.leads[0].fields[0].values[0], "Morgan Lee");
     assert_eq!(page.next_cursor.as_deref(), Some("cur_2"));
+}
+
+#[tokio::test]
+async fn upload_direct_presigns_puts_the_bytes_and_completes() {
+    let server = MockServer::start().await;
+    let upload_url = format!("{}/storage/up_1", server.uri());
+    Mock::given(method("POST"))
+        .and(path("/v1/media/presign"))
+        .and(body_json(serde_json::json!({
+            "workspaceId": "ws_1",
+            "filename": "card.png",
+            "mimeType": "image/png",
+            "size": 4
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "data": {
+                "uploadId": "up_1",
+                "uploadUrl": upload_url,
+                "method": "PUT",
+                "headers": { "Content-Type": "image/png" },
+                "expiresAt": "2026-09-19T12:00:00Z"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/storage/up_1"))
+        .and(header("content-type", "image/png"))
+        .and(header("content-length", "4"))
+        .and(body_bytes(vec![1, 2, 3, 4]))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/media/presign/up_1/complete"))
+        .and(header("x-api-key", common::API_KEY))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "data": {
+                "id": "med_1",
+                "type": "image",
+                "name": "card.png",
+                "url": "https://api.fopost.com/v1/media/med_1/file",
+                "previewUrl": "https://api.fopost.com/v1/media/med_1/file",
+                "size": 4
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let uploaded = client
+        .media()
+        .upload_direct("ws_1", "card.png", "image/png", vec![1, 2, 3, 4])
+        .await
+        .unwrap();
+
+    assert_eq!(uploaded.id.as_deref(), Some("med_1"));
+    assert_eq!(uploaded.name, "card.png");
+
+    let requests = server.received_requests().await.unwrap();
+    let put = requests.iter().find(|r| r.method == "PUT").unwrap();
+    assert!(
+        put.headers.get("x-api-key").is_none(),
+        "the upload carries no key"
+    );
+}
+
+#[tokio::test]
+async fn upload_direct_fails_on_a_rejected_put_without_completing() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/media/presign"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "data": {
+                "uploadId": "up_1",
+                "uploadUrl": format!("{}/storage/up_1", server.uri()),
+                "method": "PUT",
+                "headers": { "Content-Type": "image/png" },
+                "expiresAt": "2026-09-19T12:00:00Z"
+            }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/storage/up_1"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("AccessDenied"))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/media/presign/up_1/complete"))
+        .respond_with(ResponseTemplate::new(201))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let err = client
+        .media()
+        .upload_direct("ws_1", "card.png", "image/png", vec![1, 2, 3, 4])
+        .await
+        .unwrap_err();
+
+    match err {
+        fopost::Error::Api(err) => {
+            assert_eq!(err.status, 403);
+            assert_eq!(err.message, "AccessDenied");
+        }
+        other => panic!("expected an api error, got {other:?}"),
+    }
 }
 
 #[tokio::test]
