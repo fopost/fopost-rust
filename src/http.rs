@@ -78,6 +78,11 @@ impl HttpClient {
         &self.api_key
     }
 
+    /// The bare `reqwest::Client`, for requests that must not carry the API key.
+    pub(crate) fn inner(&self) -> &reqwest::Client {
+        &self.inner
+    }
+
     /// The configured base URL, without the trailing slash it is stored with.
     pub(crate) fn base_url(&self) -> &str {
         self.base_url.as_str().trim_end_matches('/')
