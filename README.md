@@ -10,7 +10,7 @@ platforms from your code.
 
 ```toml
 [dependencies]
-fopost = "0.2"
+fopost = "0.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
@@ -205,7 +205,7 @@ println!("{}", uploaded.url);
 To use `native-tls` instead, turn the defaults off and name what you want back:
 
 ```toml
-fopost = { version = "0.2", default-features = false, features = ["native-tls", "multipart"] }
+fopost = { version = "0.3", default-features = false, features = ["native-tls", "multipart"] }
 ```
 
 ## Forward compatibility
