@@ -1,8 +1,8 @@
 [package]
 name = "fopost"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 description = "Official Rust SDK for the FoPost API. Schedule and publish to +30 social platforms from your code."
 license = "MIT"
 readme = "README.md"

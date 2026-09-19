@@ -5,11 +5,11 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 ## What This Is
 
 Crate `fopost` on crates.io — the official Rust client for the FoPost REST API
-(`fopost.com`). Version `0.1.0`. It wraps the API's HTTP surface in resource accessors on
+(`fopost.com`). Version `0.2.0`. It wraps the API's HTTP surface in resource accessors on
 `Client`: `posts()`, `accounts()`, `workspaces()`, `labels()`, `webhooks()`,
-`automations()`, `analytics()`, `media()`.
+`automations()`, `analytics()`, `media()`, `inbox()`, `ads()`.
 
-Edition 2021, `rust-version = "1.85"` (the MSRV CI builds against). Async on `reqwest`
+Edition 2021, `rust-version = "1.88"` (the MSRV CI builds against). Async on `reqwest`
 0.12 + `tokio`; models are `serde`; errors are `thiserror`. Docs at docs.rs/fopost.
 
 This crate calls the REST API directly and has no FoPost code dependency — and nothing
@@ -34,6 +34,7 @@ src/
   http.rs        HttpClient: headers, retry loop, Envelope<T>, Query/push_opt, decode
   error.rs       Error enum, ApiError
   models/        common posts accounts workspaces labels webhooks automations analytics media
+                 inbox ads
   resources/     one module per group, each a borrowed struct holding &HttpClient
 ```
 
@@ -85,6 +86,15 @@ the transport**. `send_value` returns raw `serde_json::Value` for the escape hat
 Resource coverage is broad but **`communities` is not wrapped** (the Go SDK has it) —
 reach `GET /accounts/{id}/communities` and friends through `client.request` until it is.
 
+`inbox()` (scope `inbox`) and `ads()` (scope `ads`) cover the `Inbox` and `Ads` tags of
+`openapi.json` except `/inbox/chat/*` (browser-encrypted X Chat) and
+`/inbox/{id}/attachments/{index}` (a binary stream; the crate has no download pattern).
+Inbox lists page with `InboxPage<T>` (`meta: { page, perPage, total }`), a different
+footer from `Page<T>`. Inbox query params and the `/inbox/read` and `/inbox/refresh`
+bodies are snake_case; `PATCH /inbox/{id}` and every ads body are camelCase. `boost`,
+`create`, `set_status` and `delete` on `ads()` also need the `publish` scope, and a boost
+or ad starts paused unless `paused` is `false`; keep both in the doc comments.
+
 ## Commands
 
 ```bash
@@ -100,7 +110,7 @@ cargo run --example create_post                          # needs FOPOST_API_KEY
 cargo run --example preflight
 ```
 
-`.github/workflows/ci.yml` runs with `RUSTFLAGS: -D warnings` on `1.85` and `stable`:
+`.github/workflows/ci.yml` runs with `RUSTFLAGS: -D warnings` on `1.88` and `stable`:
 fmt check and clippy on stable only, `cargo test --all-features` on both, the
 no-default-features lib/tests build (so a `default-features = false` consumer stays
 unbroken), and an examples build. A second `docs` job runs nightly `cargo doc` with the
