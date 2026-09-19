@@ -90,6 +90,12 @@ workspace answers `403`.
 | `automations()` | `list`, `get`, `create`, `update`, `delete`, `toggle`, `runs`, `get_run`, `stats`, `trigger` |
 | `analytics()` | `overview`, `time_series`, `top_posts`, `labels`, `posts_table`, `posting_streak`, `demographics`, `collect` |
 | `media()` | `list`, `upload`, `delete` |
+| `inbox()` | `list`, `threads`, `conversations`, `unread_count`, `accounts`, `platforms`, `mark_thread_read`, `refresh`, `update`, `reply`, `hide`, `unhide`, `delete`, `approvals`, `approve_reply`, `reject_reply` |
+| `ads()` | `list`, `external`, `boostable`, `connections`, `sources`, `authorize_meta`, `delete_connection`, `boost`, `create`, `refresh`, `set_status`, `delete`, `audiences`, `create_audience`, `search_targeting`, `lead_forms`, `create_lead_form`, `leads` |
+
+`inbox()` needs the `inbox` scope and `ads()` the `ads` scope; `boost`, `create`, `set_status` and
+`delete` on `ads()` spend money and also need `publish`. A boost or ad starts paused unless you pass
+`.paused(false)`.
 
 That is every endpoint the API documents. Anything not yet wrapped is reachable through
 `client.request(method, path, query, body)`, which gets the same auth, retries, and error handling.
