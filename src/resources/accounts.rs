@@ -6,11 +6,11 @@ use crate::error::Result;
 use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
     Account, AccountAnalyticsHistory, AccountCreated, AccountDetail, AccountHealth, AccountMoved,
-    AccountRenamed, AccountsHealthSummary, BlueskyLanguages, Community, CommunitySearchResult,
-    CreateAccount, CreatePinterestBoard, CreateYouTubePlaylist, CredentialCheck, DiscordAck,
-    DiscordChannel, DiscordEventInput, DiscordIdentity, DiscordMember, DiscordMessage,
-    DiscordMessageRef, DiscordRole, DiscordRoleInput, DiscordScheduledEvent, DiscordThread,
-    DiscordThreadInput, InstagramAudio, InstagramPublishingLimit, InstagramStory,
+    AccountPlatformMetrics, AccountRenamed, AccountsHealthSummary, BlueskyLanguages, Community,
+    CommunitySearchResult, CreateAccount, CreatePinterestBoard, CreateYouTubePlaylist,
+    CredentialCheck, DiscordAck, DiscordChannel, DiscordEventInput, DiscordIdentity, DiscordMember,
+    DiscordMessage, DiscordMessageRef, DiscordRole, DiscordRoleInput, DiscordScheduledEvent,
+    DiscordThread, DiscordThreadInput, InstagramAudio, InstagramPublishingLimit, InstagramStory,
     InstagramStoryInsights, LinkedInMention, ListAccounts, Message, MetaGreeting, MetaGreetingText,
     MetaIceBreaker, MetaIceBreakers, MetaPersistentMenu, MetaPersistentMenuEntry, PinterestBoard,
     PrimaryToggled, SlackChannel, SlackIdentity, SlackMember, TelegramBotCommand,
@@ -55,6 +55,27 @@ impl Accounts<'_> {
         let body: Envelope<AccountDetail> = self
             .http
             .send::<_, ()>(Method::GET, &format!("/accounts/{id}"), None, None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// The numbers only this account's network reports, in its own vocabulary:
+    /// ad-break earnings, story taps, a retention curve, the search terms behind
+    /// a listing. Keyed by the platform's own metric names, read from the newest
+    /// collected snapshot rather than fetched live. Needs the `analytics` scope.
+    ///
+    /// A network whose metric access has not been granted yet answers `503`
+    /// (`platform_metrics_unavailable`) rather than an empty set.
+    pub async fn platform_metrics(&self, id: &str) -> Result<AccountPlatformMetrics> {
+        let query: Query = vec![("raw", "true".into())];
+        let body: Envelope<AccountPlatformMetrics> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/insights"),
+                Some(query),
+                None,
+            )
             .await?;
         Ok(body.data)
     }

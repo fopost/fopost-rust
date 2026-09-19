@@ -2576,3 +2576,121 @@ async fn linkedin_mentions_carry_the_annotation_to_paste() {
         "@[Devtestco](urn:li:organization:2414183)"
     );
 }
+
+#[tokio::test]
+async fn accounts_platform_metrics_asks_for_raw_and_decodes_the_set() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/insights"))
+        .and(query_param("raw", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "platform": "facebook",
+                "account": {
+                    "fetched_at": "2026-09-20T02:00:00.000Z",
+                    "metrics": [
+                        {
+                            "key": "page_daily_video_ad_break_earnings",
+                            "label": "Ad Break Earnings",
+                            "kind": "currency_usd",
+                            "value": 42.15
+                        },
+                        {
+                            "key": "page_impressions_paid",
+                            "label": "Paid Impressions",
+                            "kind": "count",
+                            "value": 1500
+                        }
+                    ]
+                },
+                "post": {
+                    "external_post_id": "123_456",
+                    "fetched_at": "2026-09-20T02:00:00.000Z",
+                    "metrics": []
+                }
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let metrics = client.accounts().platform_metrics("acc_1").await.unwrap();
+
+    assert_eq!(metrics.platform.as_deref(), Some("facebook"));
+    assert_eq!(
+        metrics.account.fetched_at.as_deref(),
+        Some("2026-09-20T02:00:00.000Z")
+    );
+    assert_eq!(
+        metrics
+            .account
+            .metrics
+            .iter()
+            .map(|m| m.key.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "page_daily_video_ad_break_earnings",
+            "page_impressions_paid"
+        ]
+    );
+    assert_eq!(metrics.account.metrics[0].as_number(), Some(42.15));
+    assert_eq!(metrics.post.external_post_id.as_deref(), Some("123_456"));
+    assert!(metrics.post.metrics.is_empty());
+}
+
+#[tokio::test]
+async fn accounts_platform_metrics_keeps_a_series_value_as_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/insights"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "platform": "youtube",
+                "account": {
+                    "fetched_at": null,
+                    "metrics": [{
+                        "key": "daily_views",
+                        "label": "Views by Day",
+                        "kind": "series",
+                        "value": [{"day": "2026-09-19", "views": 600}]
+                    }]
+                },
+                "post": {"external_post_id": null, "fetched_at": null, "metrics": []}
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let metrics = client.accounts().platform_metrics("acc_1").await.unwrap();
+    let row = &metrics.account.metrics[0];
+
+    assert_eq!(row.as_number(), None);
+    assert_eq!(row.value[0]["views"], 600);
+    assert!(metrics.account.fetched_at.is_none());
+}
+
+#[tokio::test]
+async fn accounts_platform_metrics_surfaces_a_pending_grant() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/insights"))
+        .respond_with(ResponseTemplate::new(503).set_body_json(serde_json::json!({
+            "error": "platform_metrics_unavailable",
+            "message": "google-business metrics are not available on this deployment yet."
+        })))
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let err = client
+        .accounts()
+        .platform_metrics("acc_1")
+        .await
+        .expect_err("a pending grant must be an error");
+
+    assert_eq!(err.status(), Some(503));
+    assert_eq!(err.code(), Some("platform_metrics_unavailable"));
+}
