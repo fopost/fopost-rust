@@ -865,3 +865,14 @@ pub struct InboxRefreshResult {
     #[serde(default)]
     pub dm_reconnect: Vec<InboxDmReconnect>,
 }
+
+/// The outcome of a Messenger thread hand-over.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct InboxHandover {
+    /// The app control went to, or `None` when it was taken back.
+    #[serde(default)]
+    pub app_id: Option<String>,
+    /// `passed` or `taken`.
+    #[serde(default)]
+    pub control: String,
+}
