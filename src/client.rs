@@ -5,8 +5,8 @@ use std::time::Duration;
 use crate::error::{Error, Result};
 use crate::http::{HttpClient, DEFAULT_BASE_URL, USER_AGENT};
 use crate::resources::{
-    AccountGroups, Accounts, Ads, Analytics, Automations, Inbox, Labels, Media, Posts, Validate,
-    Webhooks, Workspaces,
+    AccountGroups, Accounts, Ads, Analytics, Automations, Inbox, Knowledge, Labels, Media, Posts,
+    Validate, Webhooks, Workspaces,
 };
 
 /// The environment variable the key is read from by [`Client::from_env`].
@@ -107,6 +107,11 @@ impl Client {
     /// The media library.
     pub fn media(&self) -> Media<'_> {
         Media { http: &self.http }
+    }
+
+    /// The workspace knowledge base, which grounds drafted replies.
+    pub fn knowledge(&self) -> Knowledge<'_> {
+        Knowledge { http: &self.http }
     }
 
     /// Comments, mentions and direct messages on connected accounts.
