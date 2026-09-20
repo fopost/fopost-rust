@@ -10,15 +10,15 @@ use fopost::models::{
     AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceFilter, AudienceSpec, AuthorizeGoogleAds,
     BoostPost, BroadcastStatus, ContactChannel, ContactFieldType, ConversationAnalyticsQuery,
     ConversationSort, CreateAccountGroup, CreateAudience, CreateAutomation, CreateBroadcast,
-    CreateContact, CreateContactField, CreateGoogleKeyword, CreateSequence, CreateWebhook,
-    DiscordEventInput, DiscordRoleInput, Enroll, GoogleAdScheduleInput, GoogleDayOfWeek,
-    GoogleMatchType, GoogleQuery, GoogleScope, ImportContacts, InboxItemState, InboxItemType,
-    InboxReply, InboxSort, InsightsBreakdown, InsightsQuery, LeadsFeedQuery, LeadsQuery,
-    ListAccounts, ListBroadcasts, ListContacts, ListInbox, ListRecipients, MarkThreadRead,
-    Platform, RecipientStatus, SequenceStep, SetAdStatuses, SetGoogleAdSchedule, SignalLevel,
-    SkipReason, StartInboxConversation, TelegramBotCommand, TriggerType, UpdateContact,
-    UpdateDiscordIdentity, UpdateInboxItem, UpdateSlackIdentity, ValidateLength, ValidateMedia,
-    ValidateMediaItem, ValidatePost, WebhookEvent,
+    CreateContact, CreateContactField, CreateGoogleKeyword, CreatePinterestBoard, CreateSequence,
+    CreateWebhook, DiscordEventInput, DiscordRoleInput, Enroll, GoogleAdScheduleInput,
+    GoogleDayOfWeek, GoogleMatchType, GoogleQuery, GoogleScope, ImportContacts, InboxItemState,
+    InboxItemType, InboxReply, InboxSort, InsightsBreakdown, InsightsQuery, LeadsFeedQuery,
+    LeadsQuery, ListAccounts, ListBroadcasts, ListContacts, ListInbox, ListRecipients,
+    MarkThreadRead, Platform, RecipientStatus, SequenceStep, SetAdStatuses, SetGoogleAdSchedule,
+    SignalLevel, SkipReason, StartInboxConversation, TelegramBotCommand, TriggerType,
+    UpdateContact, UpdateDiscordIdentity, UpdateInboxItem, UpdateSlackIdentity, ValidateLength,
+    ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -2363,4 +2363,216 @@ async fn authorize_google_has_its_own_route() {
         .expect("authorize_google");
 
     assert_eq!(url, "https://accounts.google.com/o/x");
+}
+
+#[tokio::test]
+async fn creating_a_pinterest_board_omits_the_optionals_it_was_not_given() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/accounts/acc_1/pinterest/boards"))
+        .and(body_json(serde_json::json!({"name": "Recipes"})))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "data": {"id": "b1", "name": "Recipes", "privacy": "PUBLIC", "description": null, "image": null}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let board = client
+        .accounts()
+        .create_pinterest_board(
+            "acc_1",
+            &CreatePinterestBoard {
+                name: "Recipes".to_string(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(board.id, "b1");
+}
+
+#[tokio::test]
+async fn setting_the_default_youtube_playlist_sends_null_to_clear_it() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/v1/accounts/acc_1/youtube/playlists/default"))
+        .and(body_json(serde_json::json!({"playlist_id": null})))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"playlist_id": null}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let stored = client
+        .accounts()
+        .set_default_youtube_playlist("acc_1", None)
+        .await
+        .unwrap();
+
+    assert!(stored.is_none());
+}
+
+#[tokio::test]
+async fn bluesky_languages_round_trip_through_the_envelope() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/v1/accounts/acc_1/bluesky/languages"))
+        .and(body_json(serde_json::json!({"languages": ["en", "pt-BR"]})))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"languages": ["en", "pt-BR"]}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let result = client
+        .accounts()
+        .set_bluesky_languages("acc_1", &["en".to_string(), "pt-BR".to_string()])
+        .await
+        .unwrap();
+
+    assert_eq!(result.languages, vec!["en", "pt-BR"]);
+}
+
+#[tokio::test]
+async fn tiktok_creator_info_reports_the_accounts_own_switches() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/tiktok/creator-info"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "privacy_level_options": ["PUBLIC_TO_EVERYONE"],
+                "duet_disabled": true,
+                "max_video_post_duration_sec": 600
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let info = client
+        .accounts()
+        .tiktok_creator_info("acc_1")
+        .await
+        .unwrap();
+
+    assert!(info.duet_disabled);
+    assert!(!info.stitch_disabled);
+    assert_eq!(info.max_video_post_duration_sec, Some(600));
+}
+
+#[tokio::test]
+async fn tiktok_music_search_passes_the_query_through() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/tiktok/music"))
+        .and(query_param("q", "sunrise"))
+        .and(query_param("limit", "5"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{ "id": "m1", "title": "Sunrise", "author": "Kite" }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let tracks = client
+        .accounts()
+        .tiktok_music("acc_1", "sunrise", Some(5))
+        .await
+        .unwrap();
+
+    assert_eq!(tracks[0].id, "m1");
+    assert_eq!(tracks[0].author.as_deref(), Some("Kite"));
+}
+
+#[tokio::test]
+async fn tiktok_video_lookup_returns_the_address_a_repurpose_run_reads() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/accounts/acc_1/tiktok/video-download"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "video_id": "7300000000000000000",
+                "download_url": "https://www.tiktok.com/@a/video/7300000000000000000"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let video = client
+        .accounts()
+        .tiktok_video_lookup(
+            "acc_1",
+            "https://www.tiktok.com/@a/video/7300000000000000000",
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(video.video_id, "7300000000000000000");
+    assert!(video.download_url.is_some());
+}
+
+#[tokio::test]
+async fn instagram_stories_ask_for_insights_only_when_requested() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/instagram/stories"))
+        .and(query_param("insights", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{"id": "s1", "media_type": "IMAGE", "insights": {"views": 40}}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let stories = client
+        .accounts()
+        .instagram_stories("acc_1", true)
+        .await
+        .unwrap();
+
+    assert_eq!(stories[0].insights.as_ref().unwrap()["views"], 40);
+}
+
+#[tokio::test]
+async fn linkedin_mentions_carry_the_annotation_to_paste() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/linkedin/mentions"))
+        .and(query_param("q", "devtestco"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{
+                "urn": "urn:li:organization:2414183",
+                "name": "Devtestco",
+                "annotation": "@[Devtestco](urn:li:organization:2414183)"
+            }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let mentions = client
+        .accounts()
+        .linkedin_mentions("acc_1", "devtestco")
+        .await
+        .unwrap();
+
+    assert_eq!(
+        mentions[0].annotation,
+        "@[Devtestco](urn:li:organization:2414183)"
+    );
 }

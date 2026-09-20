@@ -1,5 +1,7 @@
 //! Connected social accounts, their health, and X communities.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use super::common::{HealthStatus, Platform};
@@ -785,4 +787,219 @@ pub struct DiscordAck {
     pub pinned: Option<bool>,
     #[serde(default)]
     pub assigned: Option<bool>,
+}
+// ─── Per-network extras ──────────────────────────────────────────
+
+/// A Pinterest board a Pin can land on. Pass `id` as the `board_id` platform
+/// setting to pin to it.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PinterestBoard {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    pub privacy: Option<String>,
+    pub description: Option<String>,
+    /// The board cover image.
+    pub image: Option<String>,
+}
+
+/// A new Pinterest board. `privacy` is `PUBLIC`, `PROTECTED` or `SECRET`.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct CreatePinterestBoard {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub privacy: Option<String>,
+}
+
+/// A playlist on the connected YouTube channel.
+#[derive(Debug, Clone, Deserialize)]
+pub struct YouTubePlaylist {
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    pub description: Option<String>,
+    pub privacy: Option<String>,
+    pub item_count: Option<i64>,
+    pub thumbnail_url: Option<String>,
+    /// The playlist a new video joins when the post picks none.
+    #[serde(default)]
+    pub is_default: bool,
+}
+
+/// A new playlist. `privacy` is `public`, `unlisted` or `private`.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct CreateYouTubePlaylist {
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub privacy: Option<String>,
+}
+
+/// A caption track on one of the channel's videos.
+#[derive(Debug, Clone, Deserialize)]
+pub struct YouTubeCaptionTrack {
+    pub id: String,
+    /// A BCP-47 tag.
+    #[serde(default)]
+    pub language: String,
+    #[serde(default)]
+    pub name: String,
+    pub track_kind: Option<String>,
+    #[serde(default)]
+    pub is_draft: bool,
+    #[serde(default)]
+    pub is_auto_synced: bool,
+    pub last_updated: Option<String>,
+}
+
+/// A caption track to upload. `body` is the subtitle file itself; YouTube reads
+/// SRT and WebVTT and works out which from the bytes.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct UploadYouTubeCaptions {
+    pub language: String,
+    pub body: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_draft: Option<bool>,
+}
+
+/// One caption track read back as text, in SRT.
+#[derive(Debug, Clone, Deserialize)]
+pub struct YouTubeTranscript {
+    pub caption_id: String,
+    #[serde(default)]
+    pub transcript: String,
+}
+
+/// The default post languages for a Bluesky connection: up to three BCP-47 tags.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct BlueskyLanguages {
+    #[serde(default)]
+    pub languages: Vec<String>,
+}
+
+/// The switches TikTok enforces at publish time. They are set on the TikTok
+/// account itself, not in FoPost.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct TikTokCreatorInfo {
+    pub username: Option<String>,
+    pub nickname: Option<String>,
+    pub avatar_url: Option<String>,
+    /// The levels this creator may publish at right now.
+    #[serde(default)]
+    pub privacy_level_options: Vec<String>,
+    #[serde(default)]
+    pub comment_disabled: bool,
+    #[serde(default)]
+    pub duet_disabled: bool,
+    #[serde(default)]
+    pub stitch_disabled: bool,
+    pub max_video_post_duration_sec: Option<i64>,
+}
+
+/// A track from TikTok's Commercial Music Library. Pass `id` as the `music_id`
+/// platform setting.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct TikTokMusic {
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    pub author: Option<String>,
+    pub duration_sec: Option<i64>,
+    pub cover_url: Option<String>,
+    pub preview_url: Option<String>,
+}
+
+/// A place a post can be tagged with. Pass `id` as the `location_id` platform
+/// setting.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct TikTokPlace {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    pub address: Option<String>,
+    pub city: Option<String>,
+    pub country: Option<String>,
+}
+
+/// One of the account's own videos, resolved from a share link. TikTok serves
+/// no raw media file, so `download_url` is the share address, which is what a
+/// repurpose run reads.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct TikTokVideoSource {
+    pub video_id: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub duration_sec: Option<i64>,
+    pub cover_image_url: Option<String>,
+    pub share_url: Option<String>,
+    pub embed_link: Option<String>,
+    pub download_url: Option<String>,
+}
+
+/// A track a Reel can carry. Pass `id` as the `audio_id` platform setting.
+#[derive(Debug, Clone, Deserialize)]
+pub struct InstagramAudio {
+    pub id: String,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub duration_ms: Option<i64>,
+    pub audio_type: Option<String>,
+    pub cover_artwork_url: Option<String>,
+    pub preview_url: Option<String>,
+    pub username: Option<String>,
+    pub is_ads_eligible: Option<bool>,
+}
+
+/// What this account has published in the rolling window, and what is left.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct InstagramPublishingLimit {
+    #[serde(default)]
+    pub quota_usage: i64,
+    pub quota_total: Option<i64>,
+    pub quota_duration_sec: Option<i64>,
+    pub remaining: Option<i64>,
+}
+
+/// A story still inside its 24 hours.
+#[derive(Debug, Clone, Deserialize)]
+pub struct InstagramStory {
+    pub id: String,
+    pub media_type: Option<String>,
+    pub media_product_type: Option<String>,
+    pub permalink: Option<String>,
+    pub media_url: Option<String>,
+    pub thumbnail_url: Option<String>,
+    pub caption: Option<String>,
+    pub timestamp: Option<String>,
+    /// Present only when asked for, and empty for a story too young to report.
+    pub insights: Option<HashMap<String, i64>>,
+}
+
+/// The insight set for one story.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct InstagramStoryInsights {
+    #[serde(default)]
+    pub story_id: String,
+    #[serde(default)]
+    pub insights: HashMap<String, i64>,
+}
+
+/// An entity a LinkedIn post can mention. `annotation` is what the post text
+/// carries for LinkedIn to render a link.
+#[derive(Debug, Clone, Deserialize)]
+pub struct LinkedInMention {
+    pub urn: String,
+    #[serde(default)]
+    pub name: String,
+    pub vanity_name: Option<String>,
+    pub logo_url: Option<String>,
+    #[serde(default)]
+    pub r#type: String,
+    #[serde(default)]
+    pub annotation: String,
 }
