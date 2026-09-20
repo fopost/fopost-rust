@@ -16,19 +16,19 @@ use crate::models::{
     Ad, AdAccountQuery, AdAccountTree, AdActivityLog, AdActivityQuery, AdAudience, AdAudiences,
     AdCampaign, AdConnection, AdCreatives, AdInsightsQuery, AdLabel, AdLabelInput, AdLibraryPage,
     AdLibraryQuery, AdObjectQuery, AdSet, AdSource, AdStatus, AdStatusResult, AdStudy,
-    ApplyAdLabel, ArchiveLeadForm, AudienceCreated, AudiencesQuery, AuthorizeMetaAds, BoostPost,
-    BoostablePost, CatalogBatchResult, CatalogProducts, CatalogProductsQuery, CreateAd,
-    CreateAdSet, CreateAdStudy, CreateAudience, CreateCampaign, CreateCatalog, CreateCreative,
-    CreateHighDemandPeriod, CreateLeadForm, CreateNetworkAd, CreateProductFeed,
-    CreateReachFrequency, CreateValueRuleSet, Creative, CreativesQuery, EstimateReach, ExternalAd,
-    HighDemandPeriod, InsightsQuery, InsightsReport, IosCampaignLimits, LeadFormDetail,
-    LeadFormQuery, LeadFormSource, LeadPage, LeadPageSubscribed, LeadsFeedPage, LeadsFeedQuery,
-    LeadsPage, LeadsQuery, Message, NetworkAd, PartnershipCreator, PartnershipQuery,
-    ProductCatalog, ProductCatalogs, ProductFeed, ProductFeedUpload, ProductSet, ProductSetInput,
-    ReachEstimate, ReachFrequencyAction, ReachFrequencyPrediction, ReachFrequencyPredictions,
-    RequestPartnership, SetAdStatus, SetAdStatuses, StartFeedUpload, SubscribeLeadPage,
-    TargetingOption, TargetingSearch, UpdateAdSet, UpdateAudience, UpdateCampaign, UpdateCatalog,
-    UpdateNetworkAd, ValueRuleSet, WriteCatalogProducts,
+    ApplyAdLabel, ArchiveLeadForm, AudienceCreated, AudiencesQuery, AuthorizeGoogleAds,
+    AuthorizeMetaAds, BoostPost, BoostablePost, CatalogBatchResult, CatalogProducts,
+    CatalogProductsQuery, CreateAd, CreateAdSet, CreateAdStudy, CreateAudience, CreateCampaign,
+    CreateCatalog, CreateCreative, CreateHighDemandPeriod, CreateLeadForm, CreateNetworkAd,
+    CreateProductFeed, CreateReachFrequency, CreateValueRuleSet, Creative, CreativesQuery,
+    EstimateReach, ExternalAd, HighDemandPeriod, InsightsQuery, InsightsReport, IosCampaignLimits,
+    LeadFormDetail, LeadFormQuery, LeadFormSource, LeadPage, LeadPageSubscribed, LeadsFeedPage,
+    LeadsFeedQuery, LeadsPage, LeadsQuery, Message, NetworkAd, PartnershipCreator,
+    PartnershipQuery, ProductCatalog, ProductCatalogs, ProductFeed, ProductFeedUpload, ProductSet,
+    ProductSetInput, ReachEstimate, ReachFrequencyAction, ReachFrequencyPrediction,
+    ReachFrequencyPredictions, RequestPartnership, SetAdStatus, SetAdStatuses, StartFeedUpload,
+    SubscribeLeadPage, TargetingOption, TargetingSearch, UpdateAdSet, UpdateAudience,
+    UpdateCampaign, UpdateCatalog, UpdateNetworkAd, ValueRuleSet, WriteCatalogProducts,
 };
 
 /// Ads.
@@ -153,6 +153,26 @@ impl Ads<'_> {
             .send(
                 Method::POST,
                 "/ads/connections/meta/authorize",
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(body.data.url)
+    }
+
+    /// The Google login URL. The caller finishes it in their own browser
+    /// session: the callback checks that the same user came back.
+    pub async fn authorize_google(&self, input: &AuthorizeGoogleAds) -> Result<String> {
+        #[derive(serde::Deserialize)]
+        struct Authorized {
+            #[serde(default)]
+            url: String,
+        }
+        let body: Envelope<Authorized> = self
+            .http
+            .send(
+                Method::POST,
+                "/ads/connections/google/authorize",
                 None,
                 Some(input),
             )

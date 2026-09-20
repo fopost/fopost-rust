@@ -272,3 +272,35 @@ TypeScript ([`@fopost/sdk`](https://github.com/fopost/fopost-js)), Python
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+### Google Ads
+
+Campaigns, ad groups, ads, audiences and insights are on `client.ads()` and dispatch by
+connection. What only Google has is on `client.google_ads()`:
+
+```rust,no_run
+use fopost::models::{CreateGoogleKeyword, GoogleMatchType, GoogleScope};
+
+# async fn run(client: fopost::Client) -> fopost::Result<()> {
+let scope = GoogleScope::new("c4d5e6f7-…", "1234567890");
+let keywords = client.google_ads().keywords(&scope, None).await?;
+
+client
+    .google_ads()
+    .create_keyword(&CreateGoogleKeyword {
+        scope: scope.clone().in_workspace("7d2b8c11-…"),
+        ad_group_id: "1234567890~adGroup~77".into(),
+        text: "running shoes".into(),
+        match_type: GoogleMatchType::Exact,
+        cpc_bid_minor: None,
+    })
+    .await?;
+# Ok(())
+# }
+```
+
+Also `keyword_ideas`, `keyword_metrics`, `search_terms`, `bid_strategies`, `ad_schedule`
+and `set_ad_schedule`, the negative keyword lists, `assets` and `asset_groups`,
+`local_services_leads`, the conversion methods, and `query` for a raw read-only GAQL
+SELECT. Changes need the `publish` scope as well as `ads`; `customer_id` has to name an
+account the connection's grant reaches.

@@ -6,8 +6,8 @@ use crate::error::{Error, Result};
 use crate::http::{HttpClient, DEFAULT_BASE_URL, USER_AGENT};
 use crate::resources::{
     AccountGroups, Accounts, Activity, Ads, Analytics, Automations, Broadcasts, Contacts,
-    GoogleBusiness, Inbox, Knowledge, Labels, Media, Posts, Sequences, Validate, Webhooks,
-    Workspaces,
+    GoogleAds, GoogleBusiness, Inbox, Knowledge, Labels, Media, Posts, Sequences, Validate,
+    Webhooks, Workspaces,
 };
 
 /// The environment variable the key is read from by [`Client::from_env`].
@@ -144,6 +144,12 @@ impl Client {
     /// Boosts, ads, audiences and lead forms on a Meta Ads connection.
     pub fn ads(&self) -> Ads<'_> {
         Ads { http: &self.http }
+    }
+
+    /// Google Ads only: keywords, assets, conversions and raw GAQL. Campaigns,
+    /// ad groups, ads, audiences and insights are on [`Client::ads`].
+    pub fn google_ads(&self) -> GoogleAds<'_> {
+        GoogleAds { http: &self.http }
     }
 
     /// Check content, length, or a media URL against platform rules without creating a post.
