@@ -7,12 +7,14 @@ mod common;
 use common::{account_fixture, client};
 use fopost::models::{
     AdBudget, AdGoal, AdInsightsQuery, AdKind, AdObjectLevel, AdObjectQuery, AdObjectRef, AdStatus,
-    AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceSpec, BoostPost, CreateAccountGroup,
-    CreateAudience, CreateAutomation, CreateWebhook, InboxItemState, InboxItemType, InboxReply,
-    InboxSort, InsightsBreakdown, InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts,
-    ListInbox, MarkThreadRead, Platform, SetAdStatuses, SignalLevel, StartInboxConversation,
-    TelegramBotCommand, TriggerType, UpdateInboxItem, UpdateSlackIdentity, ValidateLength,
-    ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
+    AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceSpec, BoostPost, ContactChannel,
+    ContactFieldType, ConversationAnalyticsQuery, ConversationSort, CreateAccountGroup,
+    CreateAudience, CreateAutomation, CreateContact, CreateContactField, CreateWebhook,
+    ImportContacts, InboxItemState, InboxItemType, InboxReply, InboxSort, InsightsBreakdown,
+    InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts, ListContacts, ListInbox,
+    MarkThreadRead, Platform, SetAdStatuses, SignalLevel, StartInboxConversation,
+    TelegramBotCommand, TriggerType, UpdateContact, UpdateInboxItem, UpdateSlackIdentity,
+    ValidateLength, ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1464,4 +1466,263 @@ async fn validating_media_sends_the_url_and_reads_the_type_field() {
     assert_eq!(result.size, 1024);
     assert_eq!(result.mime_type.as_deref(), Some("image/png"));
     assert_eq!(result.media_type.as_deref(), Some("image"));
+}
+
+// ─── Contacts ──────────────────────────────────────────────────────
+
+fn contact_fixture() -> serde_json::Value {
+    serde_json::json!({
+        "id": "con_1",
+        "display_name": "Ada Okafor",
+        "channels": [
+            {"platform": "instagram", "handle": "adaokafor", "externalId": "178414"},
+            {"platform": "x", "handle": "ada_writes", "externalId": null}
+        ],
+        "source": "inbox",
+        "note": null,
+        "first_seen_at": "2026-04-02T09:14:00.000Z",
+        "last_seen_at": "2026-09-18T14:30:00.000Z",
+        "fields": {"plan_tier": "Pro"},
+        "labels": [{"id": "lbl_1", "name": "VIP", "color": "#0070f3"}]
+    })
+}
+
+#[tokio::test]
+async fn contacts_list_reads_the_pagination_block_not_meta() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/contacts"))
+        .and(query_param("workspace_id", "ws_1"))
+        .and(query_param("search", "ada"))
+        .and(query_param("per_page", "10"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [contact_fixture()],
+            "pagination": {"page": 2, "per_page": 10, "total": 11}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let page = client
+        .contacts()
+        .list(
+            &ListContacts::new()
+                .workspace("ws_1")
+                .search("ada")
+                .page(2)
+                .per_page(10),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(page.len(), 1);
+    assert_eq!(page.items[0].display_name.as_deref(), Some("Ada Okafor"));
+    assert_eq!(
+        page.items[0].channels[0].external_id.as_deref(),
+        Some("178414")
+    );
+    assert_eq!(
+        page.items[0].fields.get("plan_tier").map(String::as_str),
+        Some("Pro")
+    );
+    assert_eq!(page.pagination.total, 11);
+    assert_eq!(page.pagination.page, 2);
+}
+
+#[tokio::test]
+async fn contacts_create_omits_an_absent_external_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/contacts"))
+        .and(body_json(serde_json::json!({
+            "workspace_id": "ws_1",
+            "channels": [{"platform": "x", "handle": "ada_writes"}],
+            "display_name": "Ada Okafor",
+            "fields": {"plan_tier": "Pro"}
+        })))
+        .respond_with(
+            ResponseTemplate::new(201)
+                .set_body_json(serde_json::json!({"data": contact_fixture()})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let contact = client
+        .contacts()
+        .create(
+            &CreateContact::new("ws_1", vec![ContactChannel::new("x", "ada_writes")])
+                .display_name("Ada Okafor")
+                .field("plan_tier", "Pro"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(contact.id, "con_1");
+}
+
+#[tokio::test]
+async fn contacts_update_clears_a_field_with_null_and_sends_nothing_else() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/v1/contacts/con_1"))
+        .and(body_json(serde_json::json!({"fields": {"region": null}})))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": contact_fixture()})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    client
+        .contacts()
+        .update("con_1", &UpdateContact::new().clear_field("region"))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn contacts_conversations_reads_the_threads_a_contact_appears_in() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/contacts/con_1/conversations"))
+        .and(query_param("limit", "10"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{
+                "key": "t_182736",
+                "account_id": "acc_1",
+                "account_username": "yourbrand",
+                "platform": "instagram",
+                "messages": 14,
+                "received": 9,
+                "sent": 5,
+                "last_message_at": "2026-09-18T14:30:00.000Z",
+                "last_item_id": "inb_1"
+            }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let rows = client
+        .contacts()
+        .conversations("con_1", Some(10))
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].key, "t_182736");
+    assert_eq!(rows[0].received, 9);
+}
+
+#[tokio::test]
+async fn contacts_import_reports_what_merged_and_what_was_skipped() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/contacts/import"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "created": 1,
+                "merged": 2,
+                "skipped": [{"row": 4, "reason": "platform and handle are both required"}],
+                "unknownColumns": ["lifetime_value"]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let result = client
+        .contacts()
+        .import(&ImportContacts::new(
+            "ws_1",
+            "platform,handle\nx,ada_writes",
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(result.created, 1);
+    assert_eq!(result.merged, 2);
+    assert_eq!(result.skipped[0].row, 4);
+    assert_eq!(result.unknown_columns, vec!["lifetime_value".to_string()]);
+}
+
+#[tokio::test]
+async fn contacts_create_field_puts_the_workspace_on_the_query() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/contacts/fields"))
+        .and(query_param("workspace_id", "ws_1"))
+        .and(body_json(serde_json::json!({
+            "key": "plan_tier",
+            "name": "Plan Tier",
+            "type": "select",
+            "options": ["Free", "Pro"]
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "data": {
+                "id": "fld_1", "key": "plan_tier", "name": "Plan Tier",
+                "type": "select", "options": ["Free", "Pro"], "position": 0
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let field = client
+        .contacts()
+        .create_field(
+            "ws_1",
+            &CreateContactField::new("plan_tier", "Plan Tier")
+                .field_type(ContactFieldType::Select)
+                .options(vec!["Free".into(), "Pro".into()]),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(field.key, "plan_tier");
+    assert_eq!(field.field_type, ContactFieldType::Select);
+}
+
+#[tokio::test]
+async fn contacts_conversation_analytics_reads_the_analytics_route() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/analytics/inbox/conversations"))
+        .and(query_param("days", "30"))
+        .and(query_param("sort", "slowest"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "conversations": [{
+                    "key": "t_1", "accountId": "acc_1", "platform": "instagram",
+                    "received": 9, "sent": 5, "answered": 5, "open": 1,
+                    "medianResponseMinutes": 47, "firstMessageAt": null, "lastMessageAt": null
+                }],
+                "total": 128, "page": 1, "perPage": 25
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let report = client
+        .contacts()
+        .conversation_analytics(
+            &ConversationAnalyticsQuery::new()
+                .days(30)
+                .sort(ConversationSort::Slowest),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(report.total, 128);
+    assert_eq!(report.conversations[0].median_response_minutes, Some(47.0));
 }

@@ -7,7 +7,7 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 Crate `fopost` on crates.io — the official Rust client for the FoPost REST API
 (`fopost.com`). Version `0.3.0`. It wraps the API's HTTP surface in resource accessors on
 `Client`: `posts()`, `accounts()`, `workspaces()`, `labels()`, `webhooks()`,
-`automations()`, `analytics()`, `media()`, `inbox()`, `ads()`, `validate()`.
+`automations()`, `analytics()`, `media()`, `inbox()`, `contacts()`, `ads()`, `validate()`.
 
 Edition 2021, `rust-version = "1.88"` (the MSRV CI builds against). Async on `reqwest`
 0.12 + `tokio`; models are `serde`; errors are `thiserror`. Docs at docs.rs/fopost.
@@ -34,7 +34,7 @@ src/
   http.rs        HttpClient: headers, retry loop, Envelope<T>, Query/push_opt, decode
   error.rs       Error enum, ApiError
   models/        common posts accounts workspaces labels webhooks automations analytics media
-                 inbox ads validate
+                 inbox contacts ads validate
   resources/     one module per group, each a borrowed struct holding &HttpClient
 ```
 
@@ -85,6 +85,13 @@ the transport**. `send_value` returns raw `serde_json::Value` for the escape hat
 
 Resource coverage is broad but **`communities` is not wrapped** (the Go SDK has it) —
 reach `GET /accounts/{id}/communities` and friends through `client.request` until it is.
+
+`contacts()` (scope `inbox`) covers the `Contacts` tag: the contact CRUD, `import`,
+`{id}/conversations` and the `/contacts/fields` family. Its list envelope is
+`{data, pagination}` with snake_case keys, so it pages with `ContactPage` rather than
+`Page<T>` or `InboxPage<T>`. `create_field` puts the workspace on the query string because
+the handler reads it from there, and `conversation_analytics` reaches
+`/analytics/inbox/conversations` and needs the `analytics` scope instead.
 
 `inbox()` (scope `inbox`) and `ads()` (scope `ads`) cover the `Inbox` and `Ads` tags of
 `openapi.json` except `/inbox/chat/*` (browser-encrypted X Chat) and
