@@ -213,6 +213,10 @@ pub struct InboxItem {
     /// A DM can be opened with `start_conversation` and a `comment_id`.
     #[serde(default)]
     pub can_private_reply: bool,
+    /// The platform's own state for a comment: `published`, `held`, `spam` or
+    /// `rejected`. `None` where the platform does not report one.
+    #[serde(default)]
+    pub moderation_status: Option<String>,
     /// The FoPost post this sits under, when there is one.
     #[serde(default)]
     pub post: Option<PublishedPostRef>,
@@ -311,6 +315,10 @@ pub struct InboxAccount {
     /// A new DM can be opened from this account by handle.
     #[serde(default)]
     pub can_start_conversation: bool,
+    /// The grant predates a permission the inbox read needs; the account is not
+    /// polled until someone reconnects it.
+    #[serde(default)]
+    pub reconnect_required: bool,
 }
 
 /// What the inbox can read on a platform. Not tenant data.
