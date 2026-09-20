@@ -595,6 +595,9 @@ pub struct DiscordChannel {
     pub parent_id: Option<String>,
     #[serde(default)]
     pub nsfw: bool,
+    /// False when a channel permission in Discord shuts the bot out of this channel.
+    #[serde(default)]
+    pub can_post: bool,
     /// The channel this account posts to.
     #[serde(default)]
     pub is_current: bool,

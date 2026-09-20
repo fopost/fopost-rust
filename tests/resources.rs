@@ -1970,7 +1970,7 @@ async fn discord_channels_and_the_channel_switch() {
     Mock::given(method("GET"))
         .and(path("/v1/accounts/acc_1/discord/channels"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "data": [{"id": "c2", "name": "launches", "type": 0, "parent_id": null, "nsfw": false, "is_current": true}]
+            "data": [{"id": "c2", "name": "launches", "type": 0, "parent_id": null, "nsfw": false, "can_post": true, "is_current": true}]
         })))
         .expect(1)
         .mount(&server)
