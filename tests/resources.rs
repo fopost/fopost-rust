@@ -8,11 +8,12 @@ use common::{account_fixture, client};
 use fopost::models::{
     AdBudget, AdGoal, AdInsightsQuery, AdKind, AdObjectLevel, AdObjectQuery, AdObjectRef, AdStatus,
     AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceSpec, BoostPost, CreateAccountGroup,
-    CreateAudience, CreateAutomation, CreateWebhook, InboxItemState, InboxItemType, InboxReply,
-    InboxSort, InsightsBreakdown, InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts,
-    ListInbox, MarkThreadRead, Platform, SetAdStatuses, SignalLevel, StartInboxConversation,
-    TelegramBotCommand, TriggerType, UpdateInboxItem, UpdateSlackIdentity, ValidateLength,
-    ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
+    CreateAudience, CreateAutomation, CreateWebhook, DiscordEventInput, DiscordRoleInput,
+    InboxItemState, InboxItemType, InboxReply, InboxSort, InsightsBreakdown, InsightsQuery,
+    LeadsFeedQuery, LeadsQuery, ListAccounts, ListInbox, MarkThreadRead, Platform, SetAdStatuses,
+    SignalLevel, StartInboxConversation, TelegramBotCommand, TriggerType, UpdateDiscordIdentity,
+    UpdateInboxItem, UpdateSlackIdentity, ValidateLength, ValidateMedia, ValidateMediaItem,
+    ValidatePost, WebhookEvent,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1464,4 +1465,249 @@ async fn validating_media_sends_the_url_and_reads_the_type_field() {
     assert_eq!(result.size, 1024);
     assert_eq!(result.mime_type.as_deref(), Some("image/png"));
     assert_eq!(result.media_type.as_deref(), Some("image"));
+}
+
+#[tokio::test]
+async fn discord_channels_and_the_channel_switch() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/discord/channels"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{"id": "c2", "name": "launches", "type": 0, "parent_id": null, "nsfw": false, "is_current": true}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path("/v1/accounts/acc_1/discord/channels/current"))
+        .and(body_json(serde_json::json!({"channel_id": "c2"})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"id": "c2", "name": "launches", "is_current": true}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let channels = client.accounts().discord_channels("acc_1").await.unwrap();
+    assert!(channels[0].is_current);
+    let switched = client
+        .accounts()
+        .switch_discord_channel("acc_1", "c2")
+        .await
+        .unwrap();
+    assert_eq!(switched.name, "launches");
+}
+
+#[tokio::test]
+async fn updating_the_discord_identity_omits_kept_fields_and_nulls_cleared_ones() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/v1/accounts/acc_1/discord/identity"))
+        .and(body_json(serde_json::json!({"username": "Release Bot"})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"username": "Release Bot", "avatar_url": null}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let update = UpdateDiscordIdentity {
+        username: Some(Some("Release Bot".into())),
+        ..Default::default()
+    };
+    let identity = client
+        .accounts()
+        .update_discord_identity("acc_1", &update)
+        .await
+        .unwrap();
+    assert_eq!(identity.username.as_deref(), Some("Release Bot"));
+}
+
+#[tokio::test]
+async fn a_discord_scheduled_event_round_trips() {
+    let server = MockServer::start().await;
+    let event = serde_json::json!({
+        "id": "e1",
+        "name": "Launch stream",
+        "description": null,
+        "channel_id": null,
+        "location": "https://example.com/live",
+        "start_time": "2026-10-01T18:00:00.000Z",
+        "end_time": "2026-10-01T19:00:00.000Z",
+        "status": "scheduled",
+        "user_count": 0
+    });
+    Mock::given(method("POST"))
+        .and(path("/v1/accounts/acc_1/discord/events"))
+        .and(body_json(serde_json::json!({
+            "name": "Launch stream",
+            "start_time": "2026-10-01T18:00:00.000Z",
+            "end_time": "2026-10-01T19:00:00.000Z",
+            "location": "https://example.com/live"
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({"data": event})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/discord/events"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": [event]})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path("/v1/accounts/acc_1/discord/events/e1"))
+        .and(body_json(serde_json::json!({"status": "canceled"})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"id": "e1", "name": "Launch stream", "start_time": "2026-10-01T18:00:00.000Z", "status": "canceled"}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/v1/accounts/acc_1/discord/events/e1"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"deleted": true}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let accounts = client.accounts();
+
+    let created = accounts
+        .create_discord_event(
+            "acc_1",
+            &DiscordEventInput {
+                name: Some("Launch stream".into()),
+                start_time: Some("2026-10-01T18:00:00.000Z".into()),
+                end_time: Some("2026-10-01T19:00:00.000Z".into()),
+                location: Some("https://example.com/live".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(created.id, "e1");
+
+    let listed = accounts.discord_events("acc_1").await.unwrap();
+    assert_eq!(listed.len(), 1);
+
+    let updated = accounts
+        .update_discord_event(
+            "acc_1",
+            "e1",
+            &DiscordEventInput {
+                status: Some("canceled".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(updated.status, "canceled");
+
+    let ack = accounts.delete_discord_event("acc_1", "e1").await.unwrap();
+    assert_eq!(ack.deleted, Some(true));
+}
+
+#[tokio::test]
+async fn discord_members_roles_and_dms() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/discord/members"))
+        .and(query_param("q", "ada"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{"id": "u7", "username": "ada", "is_bot": false, "roles": ["r1"]}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/accounts/acc_1/discord/roles"))
+        .and(body_json(serde_json::json!({"name": "Beta"})))
+        .respond_with(
+            ResponseTemplate::new(201)
+                .set_body_json(serde_json::json!({"data": {"id": "r2", "name": "Beta"}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/v1/accounts/acc_1/discord/roles/r2/members/u7"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"assigned": true}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/accounts/acc_1/discord/dm"))
+        .and(body_json(
+            serde_json::json!({"member_id": "u7", "content": "hi"}),
+        ))
+        .respond_with(
+            ResponseTemplate::new(201)
+                .set_body_json(serde_json::json!({"data": {"id": "m1", "channel_id": "dm1"}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let accounts = client.accounts();
+
+    let members = accounts
+        .discord_members("acc_1", Some("ada"), None)
+        .await
+        .unwrap();
+    assert_eq!(members[0].roles, vec!["r1".to_string()]);
+
+    let role = accounts
+        .create_discord_role(
+            "acc_1",
+            &DiscordRoleInput {
+                name: Some("Beta".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let assigned = accounts
+        .add_discord_member_role("acc_1", &role.id, "u7")
+        .await
+        .unwrap();
+    assert_eq!(assigned.assigned, Some(true));
+
+    let sent = accounts.send_discord_dm("acc_1", "u7", "hi").await.unwrap();
+    assert_eq!(sent.channel_id, "dm1");
+}
+
+#[tokio::test]
+async fn a_discord_webhook_connection_is_a_conflict() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/discord/channels"))
+        .respond_with(ResponseTemplate::new(409).set_body_json(serde_json::json!({
+            "error": "webhook_connection",
+            "message": "Upgrade it to the bot first"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let err = client
+        .accounts()
+        .discord_channels("acc_1")
+        .await
+        .unwrap_err();
+    assert_eq!(err.status(), Some(409));
+    assert_eq!(err.code(), Some("webhook_connection"));
 }
