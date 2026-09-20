@@ -114,7 +114,7 @@ impl Client {
         Inbox { http: &self.http }
     }
 
-    /// Boosts, ads, audiences and lead forms on a Meta Ads connection.
+    /// Boosts, ads, audiences and lead forms on an ad connection.
     pub fn ads(&self) -> Ads<'_> {
         Ads { http: &self.http }
     }

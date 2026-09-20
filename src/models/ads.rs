@@ -1,5 +1,5 @@
 //! Ads — boosts, standalone ads, the campaign tree, creatives, audiences,
-//! insights and lead forms on a Meta Ads connection.
+//! insights and lead forms on an ad connection.
 //!
 //! Amounts are in the ad account's currency, in minor units: `1500` is $15.00
 //! on a USD account.
@@ -84,7 +84,7 @@ string_enum! {
 }
 
 string_enum! {
-    /// How a Meta Ads connection is authorised.
+    /// How an ad connection is authorised.
     pub enum MetaLoginMethod {
         /// Facebook Login for Business. The default.
         Business => "business",
@@ -364,7 +364,7 @@ pub struct ExternalAd {
     pub workspace_id: Option<String>,
 }
 
-/// A Meta Ads connection.
+/// An ad connection.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdConnection {
@@ -580,25 +580,40 @@ pub struct LeadsPage {
     pub next_cursor: Option<String>,
 }
 
-/// The body of `POST /ads/connections/meta/authorize`.
+/// The body of `POST /ads/connections/{provider}/authorize`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AuthorizeMetaAds {
+pub struct AuthorizeAds {
     pub workspace_id: String,
+    /// The ad network to connect. Defaults to `meta`; it names the path, so it
+    /// is not sent in the body.
+    #[serde(skip)]
+    pub provider: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub method: Option<MetaLoginMethod>,
-    /// Dashboard path to land on after Meta redirects back.
+    /// Dashboard path to land on after the network redirects back.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub return_to: Option<String>,
 }
 
-impl AuthorizeMetaAds {
+/// The body of the deprecated `authorize_meta`.
+#[deprecated(note = "use AuthorizeAds, which takes a provider")]
+pub type AuthorizeMetaAds = AuthorizeAds;
+
+impl AuthorizeAds {
     pub fn new(workspace_id: impl Into<String>) -> Self {
         Self {
             workspace_id: workspace_id.into(),
+            provider: "meta".to_string(),
             method: None,
             return_to: None,
         }
+    }
+
+    /// Name the ad network to connect, such as `pinterest`.
+    pub fn provider(mut self, provider: impl Into<String>) -> Self {
+        self.provider = provider.into();
+        self
     }
 
     pub fn method(mut self, method: MetaLoginMethod) -> Self {
@@ -620,7 +635,7 @@ impl AuthorizeMetaAds {
 #[serde(rename_all = "camelCase")]
 pub struct BoostPost {
     pub workspace_id: String,
-    /// A Meta Ads connection in the workspace.
+    /// An ad connection in the workspace.
     pub connection_id: String,
     /// `act_…`, from `sources()`.
     pub ad_account_id: String,
@@ -680,7 +695,7 @@ impl BoostPost {
 #[serde(rename_all = "camelCase")]
 pub struct CreateAd {
     pub workspace_id: String,
-    /// A Meta Ads connection in the workspace.
+    /// An ad connection in the workspace.
     pub connection_id: String,
     /// `act_…`, from `sources()`.
     pub ad_account_id: String,

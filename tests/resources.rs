@@ -7,12 +7,12 @@ mod common;
 use common::{account_fixture, client};
 use fopost::models::{
     AdBudget, AdGoal, AdInsightsQuery, AdKind, AdObjectLevel, AdObjectQuery, AdObjectRef, AdStatus,
-    AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceSpec, BoostPost, CreateAccountGroup,
-    CreateAudience, CreateAutomation, CreateWebhook, InboxItemState, InboxItemType, InboxReply,
-    InboxSort, InsightsBreakdown, InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts,
-    ListInbox, MarkThreadRead, Platform, SetAdStatuses, SignalLevel, StartInboxConversation,
-    TelegramBotCommand, TriggerType, UpdateInboxItem, UpdateSlackIdentity, ValidateLength,
-    ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
+    AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceSpec, AuthorizeAds, BoostPost,
+    CreateAccountGroup, CreateAudience, CreateAutomation, CreateWebhook, InboxItemState,
+    InboxItemType, InboxReply, InboxSort, InsightsBreakdown, InsightsQuery, LeadsFeedQuery,
+    LeadsQuery, ListAccounts, ListInbox, MarkThreadRead, Platform, SetAdStatuses, SignalLevel,
+    StartInboxConversation, TelegramBotCommand, TriggerType, UpdateInboxItem, UpdateSlackIdentity,
+    ValidateLength, ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -867,6 +867,28 @@ async fn typing_posts_the_account_and_reads_the_state() {
         .await
         .unwrap();
     assert!(!typing);
+}
+
+#[tokio::test]
+async fn authorizing_a_connection_names_its_ad_network() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/ads/connections/pinterest/authorize"))
+        .and(body_json(serde_json::json!({ "workspaceId": "ws_1" })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "url": "https://www.pinterest.com/oauth/" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let url = client
+        .ads()
+        .authorize(&AuthorizeAds::new("ws_1").provider("pinterest"))
+        .await
+        .unwrap();
+    assert_eq!(url, "https://www.pinterest.com/oauth/");
 }
 
 #[tokio::test]

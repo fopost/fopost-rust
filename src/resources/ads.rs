@@ -1,5 +1,5 @@
 //! `client.ads()` — boosts, standalone ads, the campaign tree, creatives,
-//! audiences, insights and lead forms on a Meta Ads connection.
+//! audiences, insights and lead forms on an ad connection.
 //!
 //! Every call needs the `ads` scope. The calls that spend money also need
 //! `publish`: [`Ads::boost`], [`Ads::create`], [`Ads::set_status`],
@@ -14,13 +14,13 @@ use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
     Ad, AdAccountTree, AdAudience, AdAudiences, AdCampaign, AdConnection, AdCreatives,
     AdInsightsQuery, AdObjectQuery, AdSet, AdSource, AdStatus, AdStatusResult, ArchiveLeadForm,
-    AudienceCreated, AudiencesQuery, AuthorizeMetaAds, BoostPost, BoostablePost, CreateAd,
-    CreateAdSet, CreateAudience, CreateCampaign, CreateCreative, CreateLeadForm, CreateNetworkAd,
-    Creative, CreativesQuery, EstimateReach, ExternalAd, InsightsQuery, InsightsReport,
-    LeadFormDetail, LeadFormQuery, LeadFormSource, LeadPage, LeadPageSubscribed, LeadsFeedPage,
-    LeadsFeedQuery, LeadsPage, LeadsQuery, Message, NetworkAd, ReachEstimate, SetAdStatus,
-    SetAdStatuses, SubscribeLeadPage, TargetingOption, TargetingSearch, UpdateAdSet,
-    UpdateAudience, UpdateCampaign, UpdateNetworkAd,
+    AudienceCreated, AudiencesQuery, AuthorizeAds, BoostPost, BoostablePost, CreateAd, CreateAdSet,
+    CreateAudience, CreateCampaign, CreateCreative, CreateLeadForm, CreateNetworkAd, Creative,
+    CreativesQuery, EstimateReach, ExternalAd, InsightsQuery, InsightsReport, LeadFormDetail,
+    LeadFormQuery, LeadFormSource, LeadPage, LeadPageSubscribed, LeadsFeedPage, LeadsFeedQuery,
+    LeadsPage, LeadsQuery, Message, NetworkAd, ReachEstimate, SetAdStatus, SetAdStatuses,
+    SubscribeLeadPage, TargetingOption, TargetingSearch, UpdateAdSet, UpdateAudience,
+    UpdateCampaign, UpdateNetworkAd,
 };
 
 /// Ads.
@@ -90,7 +90,7 @@ impl Ads<'_> {
         Ok(body.data)
     }
 
-    /// The Meta Ads connections in a workspace.
+    /// The ad connections in a workspace.
     pub async fn connections(&self, workspace_id: Option<&str>) -> Result<Vec<AdConnection>> {
         let body: Envelope<Vec<AdConnection>> = self
             .http
@@ -118,24 +118,36 @@ impl Ads<'_> {
         Ok(body.data)
     }
 
-    /// The Meta login URL. The caller finishes it in their own browser, because
-    /// the callback checks that the same user came back.
-    pub async fn authorize_meta(&self, input: &AuthorizeMetaAds) -> Result<String> {
+    /// The network's login URL. The caller finishes it in their own browser,
+    /// because the callback checks that the same user came back. A network that
+    /// is not available on the deployment answers 503.
+    pub async fn authorize(&self, input: &AuthorizeAds) -> Result<String> {
         #[derive(serde::Deserialize)]
         struct Authorized {
             #[serde(default)]
             url: String,
         }
+        let provider = if input.provider.is_empty() {
+            "meta"
+        } else {
+            &input.provider
+        };
         let body: Envelope<Authorized> = self
             .http
             .send(
                 Method::POST,
-                "/ads/connections/meta/authorize",
+                &format!("/ads/connections/{provider}/authorize"),
                 None,
                 Some(input),
             )
             .await?;
         Ok(body.data.url)
+    }
+
+    /// The Meta login URL.
+    #[deprecated(note = "use authorize, which takes a provider")]
+    pub async fn authorize_meta(&self, input: &AuthorizeAds) -> Result<String> {
+        self.authorize(input).await
     }
 
     /// Remove a connection. Also deletes every ad record created through it.
