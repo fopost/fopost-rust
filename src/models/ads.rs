@@ -164,6 +164,10 @@ pub struct AdTargeting {
     pub behaviors: Vec<AdTargetingItem>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub income: Vec<AdTargetingItem>,
+    /// Facets a network defines for itself, keyed by the targeting search type
+    /// they were found with. `providers()` reports which a network accepts.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub facets: std::collections::BTreeMap<String, Vec<AdTargetingItem>>,
 }
 
 impl AdTargeting {
@@ -412,6 +416,9 @@ pub struct AdPageRef {
 #[serde(rename_all = "camelCase")]
 pub struct AdSource {
     pub connection_id: String,
+    /// The ad network this connection belongs to.
+    #[serde(default)]
+    pub provider: Option<String>,
     #[serde(default)]
     pub name: String,
     #[serde(default)]
@@ -420,9 +427,45 @@ pub struct AdSource {
     pub ad_accounts: Vec<AdAccountRef>,
     #[serde(default)]
     pub pages: Vec<AdPageRef>,
-    /// Set when Meta refused the listing, usually a revoked grant.
+    /// Set when the network refused the listing, usually a revoked grant.
     #[serde(default)]
     pub error: Option<String>,
+}
+
+/// An ad network from the API's registry. `configured` false cannot be
+/// connected yet.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdProvider {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    /// Logo slug.
+    #[serde(default)]
+    pub logo: Option<String>,
+    #[serde(default)]
+    pub configured: bool,
+    #[serde(default)]
+    pub connect_methods: Vec<String>,
+    /// What the network supports: campaigns, audiences, conversions,
+    /// forecasts, adLibrary, and so on.
+    #[serde(default)]
+    pub capabilities: std::collections::BTreeMap<String, bool>,
+    /// What `search_targeting` accepts here, in picker order.
+    #[serde(default)]
+    pub targeting_facets: Vec<String>,
+    /// Macros expanded inside a creative's tracking parameters.
+    #[serde(default)]
+    pub tracking_macros: Vec<AdTrackingMacro>,
+}
+
+/// A token a network expands in a link's tracking parameters at delivery time.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AdTrackingMacro {
+    #[serde(default)]
+    pub token: String,
+    #[serde(default)]
+    pub description: String,
 }
 
 /// One delivery of a boostable post.
@@ -1692,6 +1735,295 @@ pub struct ReachEstimate {
     pub upper: Option<u64>,
     #[serde(default)]
     pub ready: bool,
+}
+
+/// One row of a company-list upload. At least one of `name`, `domain`,
+/// `page_url` or `ticker` is required; the rows are never stored.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdCompany {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+    /// The company's page on the network.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_url: Option<String>,
+    /// Stock ticker, where the network matches on one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ticker: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
+}
+
+/// The shared body of a bid-pricing or supply-forecast request.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdForecast {
+    pub workspace_id: String,
+    pub connection_id: String,
+    /// The ad account as the network addresses it.
+    pub ad_account_id: String,
+    pub goal: AdGoal,
+    pub targeting: AdTargeting,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub placements: Vec<String>,
+    /// `CPC`, `CPM` or `CPV`; bid pricing only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bid_type: Option<String>,
+    /// The budget for the forecast window; supply forecast only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub budget_minor: Option<u64>,
+}
+
+impl AdForecast {
+    pub fn new(
+        workspace_id: impl Into<String>,
+        connection_id: impl Into<String>,
+        ad_account_id: impl Into<String>,
+        goal: AdGoal,
+        targeting: AdTargeting,
+    ) -> Self {
+        Self {
+            workspace_id: workspace_id.into(),
+            connection_id: connection_id.into(),
+            ad_account_id: ad_account_id.into(),
+            goal,
+            targeting,
+            placements: Vec::new(),
+            bid_type: None,
+            budget_minor: None,
+        }
+    }
+}
+
+/// What the auction costs, in minor units of the ad account currency.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BidPricing {
+    #[serde(default)]
+    pub currency: String,
+    #[serde(default)]
+    pub suggested_bid_minor: Option<i64>,
+    #[serde(default)]
+    pub min_bid_minor: Option<i64>,
+    #[serde(default)]
+    pub max_bid_minor: Option<i64>,
+    #[serde(default)]
+    pub daily_budget_floor_minor: Option<i64>,
+}
+
+/// What an audience would deliver at a budget, over the network's own window.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupplyForecast {
+    #[serde(default)]
+    pub currency: String,
+    #[serde(default)]
+    pub impressions: Option<i64>,
+    #[serde(default)]
+    pub clicks: Option<i64>,
+    #[serde(default)]
+    pub spend_minor: Option<i64>,
+    /// Days the numbers cover.
+    #[serde(default)]
+    pub window_days: Option<i64>,
+    #[serde(default)]
+    pub ready: bool,
+}
+
+/// How the network attributes a sale or a sign-up back to an ad set.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversionRule {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    /// `purchase`, `lead`, `sign_up`, `add_to_cart`, `download`, `install`,
+    /// `key_page_view` or `other`.
+    #[serde(rename = "type", default)]
+    pub conversion_type: String,
+    /// `last_touch` or `each_campaign`.
+    #[serde(default)]
+    pub attribution: String,
+    #[serde(default)]
+    pub post_click_window_days: u32,
+    #[serde(default)]
+    pub view_through_window_days: u32,
+    #[serde(default)]
+    pub value_minor: Option<i64>,
+    #[serde(default)]
+    pub currency: Option<String>,
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    /// Ad sets this rule is attached to.
+    #[serde(default)]
+    pub campaign_ids: Vec<String>,
+}
+
+/// The body of a conversion-rule create.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateConversionRule {
+    pub workspace_id: String,
+    pub connection_id: String,
+    pub ad_account_id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub conversion_type: String,
+    pub attribution: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_click_window_days: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub view_through_window_days: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_minor: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+}
+
+impl CreateConversionRule {
+    pub fn new(
+        workspace_id: impl Into<String>,
+        connection_id: impl Into<String>,
+        ad_account_id: impl Into<String>,
+        name: impl Into<String>,
+        conversion_type: impl Into<String>,
+        attribution: impl Into<String>,
+    ) -> Self {
+        Self {
+            workspace_id: workspace_id.into(),
+            connection_id: connection_id.into(),
+            ad_account_id: ad_account_id.into(),
+            name: name.into(),
+            conversion_type: conversion_type.into(),
+            attribution: attribution.into(),
+            post_click_window_days: None,
+            view_through_window_days: None,
+            value_minor: None,
+            currency: None,
+        }
+    }
+}
+
+/// The body of a conversion-rule change. Only the fields you set move.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateConversionRule {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub conversion_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attribution: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_click_window_days: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub view_through_window_days: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_minor: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+}
+
+/// What a conversion rule recorded over a date range.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversionMetrics {
+    #[serde(default)]
+    pub conversions: u64,
+    #[serde(default)]
+    pub post_click_conversions: u64,
+    #[serde(default)]
+    pub view_through_conversions: u64,
+    #[serde(default)]
+    pub value_minor: i64,
+    #[serde(default)]
+    pub cost_per_conversion_minor: Option<i64>,
+}
+
+/// One conversion sent back to the network. It needs an `email` or a
+/// `click_id`; the address is hashed inside the API and nothing is stored.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversionEvent {
+    /// Epoch milliseconds.
+    pub happened_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_minor: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    /// Your own id for the event, so a replay is counted once.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    /// The network's click id, as the landing page received it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub click_id: Option<String>,
+}
+
+/// A public ad from the network's own library, never a connection's own data.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdLibraryAd {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub advertiser_name: Option<String>,
+    #[serde(default)]
+    pub advertiser_url: Option<String>,
+    #[serde(default)]
+    pub headline: Option<String>,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(rename = "type", default)]
+    pub ad_type: Option<String>,
+    #[serde(default)]
+    pub thumbnail_url: Option<String>,
+    #[serde(default)]
+    pub first_impression_at: Option<String>,
+    #[serde(default)]
+    pub last_impression_at: Option<String>,
+    #[serde(default)]
+    pub countries: Vec<String>,
+    #[serde(default)]
+    pub details_url: Option<String>,
+    /// The paying entity, where the network discloses one.
+    #[serde(default)]
+    pub payer: Option<String>,
+    #[serde(default)]
+    pub impressions_range: Option<String>,
+}
+
+/// One page of ad-library results; pass `next_cursor` back as the cursor.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdLibraryPage {
+    #[serde(default)]
+    pub ads: Vec<AdLibraryAd>,
+    #[serde(default)]
+    pub next_cursor: Option<String>,
+}
+
+/// What an ad-library search narrows on.
+#[derive(Debug, Clone, Default)]
+pub struct AdLibraryQuery {
+    pub workspace_id: Option<String>,
+    pub connection_id: String,
+    pub keyword: Option<String>,
+    pub advertiser: Option<String>,
+    /// ISO 3166-1 alpha-2 codes.
+    pub countries: Vec<String>,
+    /// `YYYY-MM-DD`.
+    pub since: Option<String>,
+    pub until: Option<String>,
+    pub cursor: Option<String>,
 }
 
 /// Delivery numbers over a range.

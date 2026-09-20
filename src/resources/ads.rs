@@ -12,15 +12,17 @@ use reqwest::Method;
 use crate::error::Result;
 use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
-    Ad, AdAccountTree, AdAudience, AdAudiences, AdCampaign, AdConnection, AdCreatives,
-    AdInsightsQuery, AdObjectQuery, AdSet, AdSource, AdStatus, AdStatusResult, ArchiveLeadForm,
-    AudienceCreated, AudiencesQuery, AuthorizeMetaAds, BoostPost, BoostablePost, CreateAd,
-    CreateAdSet, CreateAudience, CreateCampaign, CreateCreative, CreateLeadForm, CreateNetworkAd,
-    Creative, CreativesQuery, EstimateReach, ExternalAd, InsightsQuery, InsightsReport,
-    LeadFormDetail, LeadFormQuery, LeadFormSource, LeadPage, LeadPageSubscribed, LeadsFeedPage,
-    LeadsFeedQuery, LeadsPage, LeadsQuery, Message, NetworkAd, ReachEstimate, SetAdStatus,
-    SetAdStatuses, SubscribeLeadPage, TargetingOption, TargetingSearch, UpdateAdSet,
-    UpdateAudience, UpdateCampaign, UpdateNetworkAd,
+    Ad, AdAccountTree, AdAudience, AdAudiences, AdCampaign, AdCompany, AdConnection, AdCreatives,
+    AdForecast, AdInsightsQuery, AdLibraryPage, AdLibraryQuery, AdObjectQuery, AdProvider, AdSet,
+    AdSource, AdStatus, AdStatusResult, ArchiveLeadForm, AudienceCreated, AudiencesQuery,
+    AuthorizeMetaAds, BidPricing, BoostPost, BoostablePost, ConversionEvent, ConversionMetrics,
+    ConversionRule, CreateAd, CreateAdSet, CreateAudience, CreateCampaign, CreateConversionRule,
+    CreateCreative, CreateLeadForm, CreateNetworkAd, Creative, CreativesQuery, EstimateReach,
+    ExternalAd, InsightsQuery, InsightsReport, LeadFormDetail, LeadFormQuery, LeadFormSource,
+    LeadPage, LeadPageSubscribed, LeadsFeedPage, LeadsFeedQuery, LeadsPage, LeadsQuery, Message,
+    NetworkAd, ReachEstimate, SetAdStatus, SetAdStatuses, SubscribeLeadPage, SupplyForecast,
+    TargetingOption, TargetingSearch, UpdateAdSet, UpdateAudience, UpdateCampaign,
+    UpdateConversionRule, UpdateNetworkAd,
 };
 
 /// Ads.
@@ -39,6 +41,10 @@ fn object_query(params: &AdObjectQuery) -> Query {
     let mut query = workspace_query(params.workspace_id.as_deref());
     query.push(("connection_id", params.connection_id.clone()));
     query
+}
+
+fn conversion_rule_path(id: &str, suffix: &str) -> String {
+    format!("/ads/linkedin/conversion-rules/{id}{suffix}")
 }
 
 #[derive(serde::Deserialize)]
@@ -118,9 +124,18 @@ impl Ads<'_> {
         Ok(body.data)
     }
 
-    /// The Meta login URL. The caller finishes it in their own browser, because
-    /// the callback checks that the same user came back.
-    pub async fn authorize_meta(&self, input: &AuthorizeMetaAds) -> Result<String> {
+    /// The ad networks this deployment knows, with what each one supports.
+    pub async fn providers(&self) -> Result<Vec<AdProvider>> {
+        let body: Envelope<Vec<AdProvider>> = self
+            .http
+            .send::<_, ()>(Method::GET, "/ads/providers", None, None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// The network's login URL. The caller finishes it in their own browser,
+    /// because the callback checks that the same user came back.
+    pub async fn authorize(&self, provider: &str, input: &AuthorizeMetaAds) -> Result<String> {
         #[derive(serde::Deserialize)]
         struct Authorized {
             #[serde(default)]
@@ -130,12 +145,18 @@ impl Ads<'_> {
             .http
             .send(
                 Method::POST,
-                "/ads/connections/meta/authorize",
+                &format!("/ads/connections/{provider}/authorize"),
                 None,
                 Some(input),
             )
             .await?;
         Ok(body.data.url)
+    }
+
+    /// Deprecated: use [`Ads::authorize`] with the provider id `"meta"`.
+    #[deprecated(since = "0.3.0", note = "use authorize(\"meta\", input)")]
+    pub async fn authorize_meta(&self, input: &AuthorizeMetaAds) -> Result<String> {
+        self.authorize("meta", input).await
     }
 
     /// Remove a connection. Also deletes every ad record created through it.
@@ -590,6 +611,245 @@ impl Ads<'_> {
             )
             .await?;
         Ok(body.data.added)
+    }
+
+    /// Add companies to a company-list audience. Returns how many the network
+    /// took. The rows travel with the request and are never stored.
+    pub async fn add_audience_companies(
+        &self,
+        id: &str,
+        params: &AdObjectQuery,
+        companies: &[AdCompany],
+    ) -> Result<u64> {
+        #[derive(serde::Deserialize)]
+        struct Added {
+            #[serde(default)]
+            added: u64,
+        }
+        let body: Envelope<Added> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/ads/audiences/{id}/companies"),
+                Some(object_query(params)),
+                Some(&serde_json::json!({ "companies": companies })),
+            )
+            .await?;
+        Ok(body.data.added)
+    }
+
+    /// What the auction currently costs for that audience.
+    pub async fn bid_pricing(&self, input: &AdForecast) -> Result<BidPricing> {
+        let body: Envelope<BidPricing> = self
+            .http
+            .send(Method::POST, "/ads/linkedin/bid-pricing", None, Some(input))
+            .await?;
+        Ok(body.data)
+    }
+
+    /// What that audience would deliver at that budget.
+    pub async fn supply_forecast(&self, input: &AdForecast) -> Result<SupplyForecast> {
+        let body: Envelope<SupplyForecast> = self
+            .http
+            .send(
+                Method::POST,
+                "/ads/linkedin/supply-forecast",
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// The conversion rules on one ad account.
+    pub async fn conversion_rules(
+        &self,
+        params: &AdObjectQuery,
+        ad_account_id: &str,
+    ) -> Result<Vec<ConversionRule>> {
+        let mut query = object_query(params);
+        query.push(("ad_account_id", ad_account_id.to_string()));
+        let body: Envelope<Vec<ConversionRule>> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                "/ads/linkedin/conversion-rules",
+                Some(query),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Create a conversion rule. Returns its id.
+    pub async fn create_conversion_rule(&self, input: &CreateConversionRule) -> Result<String> {
+        let body: Envelope<Duplicated> = self
+            .http
+            .send(
+                Method::POST,
+                "/ads/linkedin/conversion-rules",
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(body.data.id)
+    }
+
+    /// One rule, with the ad sets it is attached to.
+    pub async fn conversion_rule(
+        &self,
+        id: &str,
+        params: &AdObjectQuery,
+    ) -> Result<ConversionRule> {
+        let body: Envelope<ConversionRule> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &conversion_rule_path(id, ""),
+                Some(object_query(params)),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Change a rule.
+    pub async fn update_conversion_rule(
+        &self,
+        id: &str,
+        params: &AdObjectQuery,
+        input: &UpdateConversionRule,
+    ) -> Result<ConversionRule> {
+        let body: Envelope<ConversionRule> = self
+            .http
+            .send(
+                Method::PATCH,
+                &conversion_rule_path(id, ""),
+                Some(object_query(params)),
+                Some(input),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Turn a rule off. The network keeps the history; the answer has no body.
+    pub async fn delete_conversion_rule(&self, id: &str, params: &AdObjectQuery) -> Result<()> {
+        self.http
+            .send::<serde_json::Value, ()>(
+                Method::DELETE,
+                &conversion_rule_path(id, ""),
+                Some(object_query(params)),
+                None,
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Attach a rule to an ad set on the same connection.
+    pub async fn attach_conversion_rule(
+        &self,
+        id: &str,
+        params: &AdObjectQuery,
+        campaign_id: &str,
+    ) -> Result<ConversionRule> {
+        self.association(Method::POST, id, params, campaign_id)
+            .await
+    }
+
+    /// Detach a rule from an ad set.
+    pub async fn detach_conversion_rule(
+        &self,
+        id: &str,
+        params: &AdObjectQuery,
+        campaign_id: &str,
+    ) -> Result<ConversionRule> {
+        self.association(Method::DELETE, id, params, campaign_id)
+            .await
+    }
+
+    async fn association(
+        &self,
+        method: Method,
+        id: &str,
+        params: &AdObjectQuery,
+        campaign_id: &str,
+    ) -> Result<ConversionRule> {
+        let body: Envelope<ConversionRule> = self
+            .http
+            .send(
+                method,
+                &conversion_rule_path(id, "/associations"),
+                Some(object_query(params)),
+                Some(&serde_json::json!({ "campaignId": campaign_id })),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// What a rule recorded between two `YYYY-MM-DD` days, inclusive.
+    pub async fn conversion_metrics(
+        &self,
+        id: &str,
+        params: &AdObjectQuery,
+        since: &str,
+        until: &str,
+    ) -> Result<ConversionMetrics> {
+        let mut query = object_query(params);
+        query.push(("since", since.to_string()));
+        query.push(("until", until.to_string()));
+        let body: Envelope<ConversionMetrics> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &conversion_rule_path(id, "/metrics"),
+                Some(query),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Send conversions back to the network. Returns how many it took.
+    pub async fn send_conversion_events(
+        &self,
+        id: &str,
+        params: &AdObjectQuery,
+        events: &[ConversionEvent],
+    ) -> Result<u64> {
+        #[derive(serde::Deserialize)]
+        struct Accepted {
+            #[serde(default)]
+            accepted: u64,
+        }
+        let body: Envelope<Accepted> = self
+            .http
+            .send(
+                Method::POST,
+                &conversion_rule_path(id, "/events"),
+                Some(object_query(params)),
+                Some(&serde_json::json!({ "events": events })),
+            )
+            .await?;
+        Ok(body.data.accepted)
+    }
+
+    /// The network's own public ad library, not the connection's ads.
+    pub async fn ad_library(&self, params: &AdLibraryQuery) -> Result<AdLibraryPage> {
+        let mut query = workspace_query(params.workspace_id.as_deref());
+        query.push(("connection_id", params.connection_id.clone()));
+        push_opt(&mut query, "keyword", params.keyword.as_deref());
+        push_opt(&mut query, "advertiser", params.advertiser.as_deref());
+        if !params.countries.is_empty() {
+            query.push(("countries", params.countries.join(",")));
+        }
+        push_opt(&mut query, "since", params.since.as_deref());
+        push_opt(&mut query, "until", params.until.as_deref());
+        push_opt(&mut query, "cursor", params.cursor.as_deref());
+        let body: Envelope<AdLibraryPage> = self
+            .http
+            .send::<_, ()>(Method::GET, "/ads/ad-library", Some(query), None)
+            .await?;
+        Ok(body.data)
     }
 
     /// How many people a targeting reaches.
