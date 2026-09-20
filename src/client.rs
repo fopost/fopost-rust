@@ -5,8 +5,9 @@ use std::time::Duration;
 use crate::error::{Error, Result};
 use crate::http::{HttpClient, DEFAULT_BASE_URL, USER_AGENT};
 use crate::resources::{
-    AccountGroups, Accounts, Ads, Analytics, Automations, GoogleAds, Inbox, Labels, Media, Posts,
-    Validate, Webhooks, Workspaces,
+    AccountGroups, Accounts, Activity, Ads, Analytics, Automations, Broadcasts, Contacts,
+    GoogleAds, GoogleBusiness, Inbox, Knowledge, Labels, Media, Posts, Sequences, Validate,
+    Webhooks, Workspaces,
 };
 
 /// The environment variable the key is read from by [`Client::from_env`].
@@ -84,6 +85,11 @@ impl Client {
         Workspaces { http: &self.http }
     }
 
+    /// What happened in a workspace, and the security audit log.
+    pub fn activity(&self) -> Activity<'_> {
+        Activity { http: &self.http }
+    }
+
     /// Labels.
     pub fn labels(&self) -> Labels<'_> {
         Labels { http: &self.http }
@@ -109,9 +115,30 @@ impl Client {
         Media { http: &self.http }
     }
 
-    /// Comments, mentions and direct messages on connected accounts.
+    /// The workspace knowledge base, which grounds drafted replies.
+    pub fn knowledge(&self) -> Knowledge<'_> {
+        Knowledge { http: &self.http }
+    }
+
+    /// Comments, mentions, reviews and direct messages on connected accounts.
     pub fn inbox(&self) -> Inbox<'_> {
         Inbox { http: &self.http }
+    }
+
+    /// The people behind the inbox, and the fields kept about them.
+    pub fn contacts(&self) -> Contacts<'_> {
+        Contacts { http: &self.http }
+    }
+
+    /// One message into every conversation the workspace already has with a
+    /// segment of its contacts.
+    pub fn broadcasts(&self) -> Broadcasts<'_> {
+        Broadcasts { http: &self.http }
+    }
+
+    /// A series of messages on a delay, walked per enrolled contact.
+    pub fn sequences(&self) -> Sequences<'_> {
+        Sequences { http: &self.http }
     }
 
     /// Boosts, ads, audiences and lead forms on a Meta Ads connection.
@@ -128,6 +155,11 @@ impl Client {
     /// Check content, length, or a media URL against platform rules without creating a post.
     pub fn validate(&self) -> Validate<'_> {
         Validate { http: &self.http }
+    }
+
+    /// Manage a connected Google Business Profile location.
+    pub fn google_business(&self) -> GoogleBusiness<'_> {
+        GoogleBusiness { http: &self.http }
     }
 
     /// Call an endpoint the SDK does not wrap yet, with the auth, retries, and

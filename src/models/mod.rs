@@ -11,12 +11,16 @@
 
 pub mod account_groups;
 pub mod accounts;
+pub mod activity;
 pub mod ads;
 pub mod analytics;
 pub mod automations;
+pub mod broadcasts;
 pub mod common;
+pub mod contacts;
 pub mod google_ads;
 pub mod inbox;
+pub mod knowledge;
 pub mod labels;
 pub mod media;
 pub mod posts;
@@ -26,12 +30,16 @@ pub mod workspaces;
 
 pub use account_groups::*;
 pub use accounts::*;
+pub use activity::*;
 pub use ads::*;
 pub use analytics::*;
 pub use automations::*;
+pub use broadcasts::*;
 pub use common::*;
+pub use contacts::*;
 pub use google_ads::*;
 pub use inbox::*;
+pub use knowledge::*;
 pub use labels::*;
 pub use media::*;
 pub use posts::*;

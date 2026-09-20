@@ -28,7 +28,8 @@
 //! dashboard under **Settings → API Keys** and carry only the scopes granted at
 //! creation: `posts` (which covers publishing, deliveries, and media),
 //! `workspaces`, `accounts`, `labels`, `webhooks`, `analytics`, `automations`,
-//! `inbox`, and `ads` (whose four spending calls also need `publish`).
+//! `inbox` (which also covers the knowledge base), and `ads` (whose four
+//! spending calls also need `publish`).
 //! A key may also be bound to one workspace, in which case naming any other
 //! workspace answers `403`.
 //!
