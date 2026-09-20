@@ -5,8 +5,9 @@ use std::time::Duration;
 use crate::error::{Error, Result};
 use crate::http::{HttpClient, DEFAULT_BASE_URL, USER_AGENT};
 use crate::resources::{
-    AccountGroups, Accounts, Activity, Ads, Analytics, Automations, Broadcasts, Contacts, Inbox,
-    Knowledge, Labels, Media, Posts, Sequences, Validate, Webhooks, Workspaces,
+    AccountGroups, Accounts, Activity, Ads, Analytics, Automations, Broadcasts, Contacts,
+    GoogleBusiness, Inbox, Knowledge, Labels, Media, Posts, Sequences, Validate, Webhooks,
+    Workspaces,
 };
 
 /// The environment variable the key is read from by [`Client::from_env`].
@@ -148,6 +149,11 @@ impl Client {
     /// Check content, length, or a media URL against platform rules without creating a post.
     pub fn validate(&self) -> Validate<'_> {
         Validate { http: &self.http }
+    }
+
+    /// Manage a connected Google Business Profile location.
+    pub fn google_business(&self) -> GoogleBusiness<'_> {
+        GoogleBusiness { http: &self.http }
     }
 
     /// Call an endpoint the SDK does not wrap yet, with the auth, retries, and
