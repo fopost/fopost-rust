@@ -7,14 +7,16 @@ mod common;
 use common::{account_fixture, client};
 use fopost::models::{
     AdBudget, AdGoal, AdInsightsQuery, AdKind, AdObjectLevel, AdObjectQuery, AdObjectRef, AdStatus,
-    AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceSpec, BoostPost, ContactChannel,
-    ContactFieldType, ConversationAnalyticsQuery, ConversationSort, CreateAccountGroup,
-    CreateAudience, CreateAutomation, CreateContact, CreateContactField, CreateWebhook,
-    ImportContacts, InboxItemState, InboxItemType, InboxReply, InboxSort, InsightsBreakdown,
-    InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts, ListContacts, ListInbox,
-    MarkThreadRead, Platform, SetAdStatuses, SignalLevel, StartInboxConversation,
-    TelegramBotCommand, TriggerType, UpdateContact, UpdateInboxItem, UpdateSlackIdentity,
-    ValidateLength, ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
+    AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceFilter, AudienceSpec, BoostPost,
+    BroadcastStatus, ContactChannel, ContactFieldType, ConversationAnalyticsQuery,
+    ConversationSort, CreateAccountGroup, CreateAudience, CreateAutomation, CreateBroadcast,
+    CreateContact, CreateContactField, CreateSequence, CreateWebhook, Enroll, ImportContacts,
+    InboxItemState, InboxItemType, InboxReply, InboxSort, InsightsBreakdown, InsightsQuery,
+    LeadsFeedQuery, LeadsQuery, ListAccounts, ListBroadcasts, ListContacts, ListInbox,
+    ListRecipients, MarkThreadRead, Platform, RecipientStatus, SequenceStep, SetAdStatuses,
+    SignalLevel, SkipReason, StartInboxConversation, TelegramBotCommand, TriggerType,
+    UpdateContact, UpdateInboxItem, UpdateSlackIdentity, ValidateLength, ValidateMedia,
+    ValidateMediaItem, ValidatePost, WebhookEvent,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1725,4 +1727,238 @@ async fn contacts_conversation_analytics_reads_the_analytics_route() {
 
     assert_eq!(report.total, 128);
     assert_eq!(report.conversations[0].median_response_minutes, Some(47.0));
+}
+
+fn broadcast_fixture() -> serde_json::Value {
+    serde_json::json!({
+        "id": "bc_1",
+        "name": "September check-in",
+        "text": "New colours just landed.",
+        "account_id": "acc_1",
+        "audience": {"platforms": ["instagram"]},
+        "status": "sent",
+        "scheduled_at": null,
+        "sent_at": "2026-09-19T10:04:00.000Z",
+        "created_at": "2026-09-19T09:58:00.000Z",
+        "counts": {"total": 3, "sent": 2, "skipped": 1, "failed": 0, "pending": 0}
+    })
+}
+
+#[tokio::test]
+async fn broadcasts_list_reads_the_pagination_block_not_meta() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/broadcasts"))
+        .and(query_param("workspace_id", "ws_1"))
+        .and(query_param("status", "sent"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [broadcast_fixture()],
+            "pagination": {"page": 2, "per_page": 10, "total": 11}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let page = client
+        .broadcasts()
+        .list(
+            &ListBroadcasts::new()
+                .workspace("ws_1")
+                .status(BroadcastStatus::Sent)
+                .page(2)
+                .per_page(10),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(page.len(), 1);
+    assert_eq!(page.items[0].name, "September check-in");
+    let counts = page.items[0].counts.as_ref().unwrap();
+    assert_eq!(counts.sent, 2);
+    assert_eq!(counts.skipped, 1);
+    assert_eq!(page.pagination.total, 11);
+}
+
+#[tokio::test]
+async fn broadcasts_create_sends_the_snake_case_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/broadcasts"))
+        .and(body_json(serde_json::json!({
+            "workspace_id": "ws_1",
+            "account_id": "acc_1",
+            "name": "September check-in",
+            "text": "New colours just landed.",
+            "audience": {"platforms": ["instagram"]},
+            "scheduled_at": "2026-10-01T09:00:00.000Z"
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "data": broadcast_fixture()
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    client
+        .broadcasts()
+        .create(
+            &CreateBroadcast::new(
+                "ws_1",
+                "acc_1",
+                "September check-in",
+                "New colours just landed.",
+            )
+            .audience(AudienceFilter::new().platforms(["instagram"]))
+            .scheduled_at("2026-10-01T09:00:00.000Z"),
+        )
+        .await
+        .unwrap();
+}
+
+/// A closed messaging window has to be readable, or a non-send is a mystery.
+#[tokio::test]
+async fn a_skipped_recipient_keeps_its_reason() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/broadcasts/bc_1/recipients"))
+        .and(query_param("status", "skipped"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{
+                "contact_id": "con_1",
+                "display_name": "Sam Rivera",
+                "status": "skipped",
+                "skip_reason": "window_closed",
+                "sent_at": null,
+                "error": null
+            }],
+            "pagination": {"page": 1, "per_page": 50, "total": 1}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let page = client
+        .broadcasts()
+        .recipients(
+            "bc_1",
+            &ListRecipients::new().status(RecipientStatus::Skipped),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(page.items[0].status, RecipientStatus::Skipped);
+    assert_eq!(page.items[0].skip_reason, Some(SkipReason::WindowClosed));
+}
+
+#[tokio::test]
+async fn broadcast_send_reports_how_many_matched() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/broadcasts/bc_1/send"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"id": "bc_1", "status": "sending", "recipients": 3}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let sent = client.broadcasts().send("bc_1").await.unwrap();
+
+    assert_eq!(sent.recipients, 3);
+    assert_eq!(sent.status, "sending");
+}
+
+#[tokio::test]
+async fn sequence_steps_travel_as_given() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/sequences"))
+        .and(body_json(serde_json::json!({
+            "workspace_id": "ws_1",
+            "account_id": "acc_1",
+            "name": "Welcome",
+            "steps": [{"delay_hours": 0.0, "text": "Hi"}]
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "data": {
+                "id": "seq_1",
+                "name": "Welcome",
+                "account_id": "acc_1",
+                "steps": [
+                    {"delay_hours": 0, "text": "Hi"},
+                    {"delay_hours": 48, "text": "Still here?"}
+                ],
+                "status": "active",
+                "created_at": "2026-09-12T08:00:00.000Z"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let sequence = client
+        .sequences()
+        .create(&CreateSequence::new(
+            "ws_1",
+            "acc_1",
+            "Welcome",
+            vec![SequenceStep::new(0.0, "Hi")],
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(sequence.steps[1].delay_hours, 48.0);
+}
+
+#[tokio::test]
+async fn enroll_takes_ids_or_an_audience() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/sequences/seq_1/enroll"))
+        .and(body_json(
+            serde_json::json!({"contact_ids": ["con_1", "con_2"]}),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"id": "seq_1", "enrolled": 2}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let enrolled = client
+        .sequences()
+        .enroll("seq_1", &Enroll::contacts(["con_1", "con_2"]))
+        .await
+        .unwrap();
+
+    assert_eq!(enrolled.enrolled, 2);
+}
+
+#[tokio::test]
+async fn unenroll_names_the_contacts_it_stops() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/sequences/seq_1/unenroll"))
+        .and(body_json(serde_json::json!({"contact_ids": ["con_1"]})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"id": "seq_1", "stopped": 1}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let stopped = client
+        .sequences()
+        .unenroll("seq_1", &["con_1".to_string()])
+        .await
+        .unwrap();
+
+    assert_eq!(stopped.stopped, 1);
 }

@@ -93,10 +93,12 @@ workspace answers `403`.
 | `media()` | `list`, `upload`, `presign`, `complete`, `upload_direct`, `delete` |
 | `inbox()` | `list`, `threads`, `conversations`, `unread_count`, `accounts`, `platforms`, `mark_thread_read`, `refresh`, `update`, `edit_comment`, `reply`, `reply_with`, `hide`, `unhide`, `delete`, `like`, `unlike`, `pin`, `unpin`, `react`, `start_conversation`, `set_typing`, `approvals`, `approve_reply`, `reject_reply` |
 | `contacts()` | `list`, `get`, `create`, `update`, `delete`, `conversations`, `import`, `list_fields`, `create_field`, `update_field`, `delete_field`, `conversation_analytics` |
+| `broadcasts()` | `list`, `get`, `create`, `update`, `delete`, `send`, `cancel`, `recipients` |
+| `sequences()` | `list`, `get`, `create`, `update`, `delete`, `enroll`, `unenroll`, `enrollments` |
 | `ads()` | `list`, `external`, `boostable`, `connections`, `sources`, `authorize_meta`, `delete_connection`, `boost`, `create`, `refresh`, `set_status`, `delete`, `audiences`, `create_audience`, `search_targeting`, `lead_forms`, `create_lead_form`, `leads`, `tree`, `create_campaign`, `campaign`, `update_campaign`, `delete_campaign`, `duplicate_campaign`, `create_ad_set`, `ad_set`, `update_ad_set`, `delete_ad_set`, `duplicate_ad_set`, `create_network_ad`, `network_ad`, `update_network_ad`, `delete_network_ad`, `duplicate_network_ad`, `set_statuses`, `creatives`, `create_creative`, `creative`, `delete_creative`, `audience`, `update_audience`, `delete_audience`, `add_audience_users`, `estimate_reach`, `insights`, `ad_insights`, `lead_form`, `archive_lead_form`, `leads_feed`, `lead_pages`, `subscribe_lead_page`, `unsubscribe_lead_page` |
 | `validate()` | `post`, `length`, `media` |
 
-`account_groups()` needs the `accounts` scope. `inbox()` and `contacts()` need the `inbox` scope, except `contacts().conversation_analytics`, which needs `analytics` and `ads()` the `ads` scope; `boost`, `create`, `set_status`,
+`account_groups()` needs the `accounts` scope. `inbox()`, `contacts()`, `broadcasts()` and `sequences()` need the `inbox` scope (and `publish` on `broadcasts().send`/`cancel` and `sequences().enroll`/`unenroll`, which reach a platform), except `contacts().conversation_analytics`, which needs `analytics` and `ads()` the `ads` scope; `boost`, `create`, `set_status`,
 `delete`, `set_statuses` and every create, update, delete and duplicate on campaigns, ad sets and network ads
 on `ads()` spend money and also need `publish`. On `inbox()`, `edit_comment`, `like`, `unlike`, `pin`,
 `unpin`, `react`, `start_conversation`, `set_typing`, a `reply_with` carrying media or quick replies,
