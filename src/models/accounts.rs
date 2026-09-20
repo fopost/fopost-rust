@@ -576,3 +576,210 @@ impl CreateAccount {
         self
     }
 }
+
+// ─── Discord (bot connections) ──────────────────────────────────────────────
+//
+// A Discord account connected with a webhook has no bot to act as: every route
+// here answers `409` with code `webhook_connection` for one.
+
+/// A Discord text channel the bot can post to.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DiscordChannel {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    /// Discord's channel type: 0 text, 5 announcement, 15 forum.
+    #[serde(default)]
+    pub r#type: i64,
+    #[serde(default)]
+    pub parent_id: Option<String>,
+    #[serde(default)]
+    pub nsfw: bool,
+    /// The channel this account posts to.
+    #[serde(default)]
+    pub is_current: bool,
+}
+
+/// The nickname and avatar the bot wears in the server. `None` falls back to its own.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct DiscordIdentity {
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
+}
+
+/// The body of `PATCH /accounts/{id}/discord/identity`. For each field `None` keeps the
+/// value and `Some(None)` clears it.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct UpdateDiscordIdentity {
+    /// 1-32 characters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub username: Option<Option<String>>,
+    /// An http(s) image URL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<Option<String>>,
+}
+
+/// A message in the connected channel.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DiscordMessage {
+    pub id: String,
+    #[serde(default)]
+    pub channel_id: String,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
+    pub author_id: String,
+    #[serde(default)]
+    pub author_name: String,
+    #[serde(default)]
+    pub pinned: bool,
+    #[serde(default)]
+    pub created_at: Option<String>,
+}
+
+/// A message the bot put somewhere.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DiscordMessageRef {
+    pub id: String,
+    #[serde(default)]
+    pub channel_id: String,
+}
+
+/// A thread started on a message.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DiscordThread {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub parent_id: Option<String>,
+}
+
+/// An event on the server's calendar. `channel_id` names a voice or stage channel;
+/// otherwise `location` says where it happens.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DiscordScheduledEvent {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub channel_id: Option<String>,
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default)]
+    pub start_time: String,
+    #[serde(default)]
+    pub end_time: Option<String>,
+    /// One of `scheduled`, `active`, `completed` or `canceled`.
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub user_count: Option<i64>,
+}
+
+/// The body of the scheduled-event create and update calls. Give `channel_id`, or
+/// `location` with an `end_time`. On an update, an omitted field is left as it is.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct DiscordEventInput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// RFC 3339.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<String>,
+    /// RFC 3339; required for an event at a location.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    /// Only meaningful on an update.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+}
+
+/// A person in the connected server. Pass `id` as the member id for a DM or a role.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DiscordMember {
+    pub id: String,
+    #[serde(default)]
+    pub username: String,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    /// Nickname in this server.
+    #[serde(default)]
+    pub nick: Option<String>,
+    #[serde(default)]
+    pub avatar: Option<String>,
+    #[serde(default)]
+    pub is_bot: bool,
+    #[serde(default)]
+    pub roles: Vec<String>,
+    #[serde(default)]
+    pub joined_at: Option<String>,
+}
+
+/// A role in the connected server.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DiscordRole {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    /// An RGB integer; 0 is the default colour.
+    #[serde(default)]
+    pub color: i64,
+    #[serde(default)]
+    pub hoist: bool,
+    #[serde(default)]
+    pub mentionable: bool,
+    /// A managed role belongs to an integration and cannot be edited.
+    #[serde(default)]
+    pub managed: bool,
+    #[serde(default)]
+    pub position: i64,
+    /// Discord's permission bitfield as a decimal string.
+    #[serde(default)]
+    pub permissions: String,
+}
+
+/// The body of the role create and update calls.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct DiscordRoleInput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hoist: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mentionable: Option<bool>,
+    /// Discord's permission bitfield as a decimal string.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<String>,
+}
+
+/// The body of the thread call.
+#[derive(Debug, Clone, Serialize)]
+pub struct DiscordThreadInput {
+    pub name: String,
+    /// Minutes of inactivity before it archives: 60, 1440, 4320 or 10080.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_archive_duration: Option<i64>,
+}
+
+/// What a delete or a pin answers.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DiscordAck {
+    #[serde(default)]
+    pub deleted: Option<bool>,
+    #[serde(default)]
+    pub pinned: Option<bool>,
+    #[serde(default)]
+    pub assigned: Option<bool>,
+}

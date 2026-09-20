@@ -7,10 +7,13 @@ use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
     Account, AccountAnalyticsHistory, AccountCreated, AccountDetail, AccountHealth, AccountMoved,
     AccountRenamed, AccountsHealthSummary, Community, CommunitySearchResult, CreateAccount,
-    CredentialCheck, ListAccounts, Message, MetaGreeting, MetaGreetingText, MetaIceBreaker,
-    MetaIceBreakers, MetaPersistentMenu, MetaPersistentMenuEntry, PrimaryToggled, SlackChannel,
-    SlackIdentity, SlackMember, TelegramBotCommand, TelegramBotCommands, TelegramConnectCode,
-    TelegramConnectStatus, TokenRefreshed, UpdateSlackIdentity, WebhookSubscription,
+    CredentialCheck, DiscordAck, DiscordChannel, DiscordEventInput, DiscordIdentity, DiscordMember,
+    DiscordMessage, DiscordMessageRef, DiscordRole, DiscordRoleInput, DiscordScheduledEvent,
+    DiscordThread, DiscordThreadInput, ListAccounts, Message, MetaGreeting, MetaGreetingText,
+    MetaIceBreaker, MetaIceBreakers, MetaPersistentMenu, MetaPersistentMenuEntry, PrimaryToggled,
+    SlackChannel, SlackIdentity, SlackMember, TelegramBotCommand, TelegramBotCommands,
+    TelegramConnectCode, TelegramConnectStatus, TokenRefreshed, UpdateDiscordIdentity,
+    UpdateSlackIdentity, WebhookSubscription,
 };
 
 /// Connected accounts, their health, and their X communities.
@@ -405,6 +408,323 @@ impl Accounts<'_> {
             .send::<_, ()>(
                 Method::POST,
                 &format!("/accounts/{id}/webhook-subscription"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    // ── Discord (bot connections) ───────────────────────────────────────────
+    //
+    // A webhook connection answers `409` with code `webhook_connection` on each
+    // of these; there is no bot on it to act as.
+
+    /// Text channels the bot can post to in the connected server.
+    pub async fn discord_channels(&self, id: &str) -> Result<Vec<DiscordChannel>> {
+        self.discord_get(id, "channels".to_string()).await
+    }
+
+    /// Move the account to another channel in the same server.
+    pub async fn switch_discord_channel(
+        &self,
+        id: &str,
+        channel_id: &str,
+    ) -> Result<DiscordChannel> {
+        let body: Envelope<DiscordChannel> = self
+            .http
+            .send(
+                Method::PATCH,
+                &format!("/accounts/{id}/discord/channels/current"),
+                None,
+                Some(&serde_json::json!({ "channel_id": channel_id })),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// The nickname and avatar the bot wears in the server.
+    pub async fn discord_identity(&self, id: &str) -> Result<DiscordIdentity> {
+        self.discord_get(id, "identity".to_string()).await
+    }
+
+    /// Set the nickname and avatar the bot wears in the server.
+    pub async fn update_discord_identity(
+        &self,
+        id: &str,
+        identity: &UpdateDiscordIdentity,
+    ) -> Result<DiscordIdentity> {
+        let body: Envelope<DiscordIdentity> = self
+            .http
+            .send(
+                Method::PATCH,
+                &format!("/accounts/{id}/discord/identity"),
+                None,
+                Some(identity),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Pinned messages in the account's channel.
+    pub async fn discord_pins(&self, id: &str) -> Result<Vec<DiscordMessage>> {
+        self.discord_get(id, "messages/pinned".to_string()).await
+    }
+
+    /// Remove a message from the account's channel.
+    pub async fn delete_discord_message(&self, id: &str, message_id: &str) -> Result<DiscordAck> {
+        self.discord_send(Method::DELETE, id, format!("messages/{message_id}"))
+            .await
+    }
+
+    /// Pin a message in the account's channel.
+    pub async fn pin_discord_message(&self, id: &str, message_id: &str) -> Result<DiscordAck> {
+        self.discord_send(Method::POST, id, format!("messages/{message_id}/pin"))
+            .await
+    }
+
+    /// Unpin a message in the account's channel.
+    pub async fn unpin_discord_message(&self, id: &str, message_id: &str) -> Result<DiscordAck> {
+        self.discord_send(Method::DELETE, id, format!("messages/{message_id}/pin"))
+            .await
+    }
+
+    /// Publish an announcement-channel message to every server following the channel.
+    pub async fn crosspost_discord_message(
+        &self,
+        id: &str,
+        message_id: &str,
+    ) -> Result<DiscordMessageRef> {
+        self.discord_send(Method::POST, id, format!("messages/{message_id}/crosspost"))
+            .await
+    }
+
+    /// Start a thread on a message.
+    pub async fn create_discord_thread(
+        &self,
+        id: &str,
+        message_id: &str,
+        input: &DiscordThreadInput,
+    ) -> Result<DiscordThread> {
+        let body: Envelope<DiscordThread> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/accounts/{id}/discord/messages/{message_id}/thread"),
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Send one message to a member of the server.
+    pub async fn send_discord_dm(
+        &self,
+        id: &str,
+        member_id: &str,
+        content: &str,
+    ) -> Result<DiscordMessageRef> {
+        let body: Envelope<DiscordMessageRef> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/accounts/{id}/discord/dm"),
+                None,
+                Some(&serde_json::json!({ "member_id": member_id, "content": content })),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// The server's scheduled events.
+    pub async fn discord_events(&self, id: &str) -> Result<Vec<DiscordScheduledEvent>> {
+        self.discord_get(id, "events".to_string()).await
+    }
+
+    /// One scheduled event.
+    pub async fn discord_event(&self, id: &str, event_id: &str) -> Result<DiscordScheduledEvent> {
+        self.discord_get(id, format!("events/{event_id}")).await
+    }
+
+    /// Add an event to the server's calendar.
+    pub async fn create_discord_event(
+        &self,
+        id: &str,
+        input: &DiscordEventInput,
+    ) -> Result<DiscordScheduledEvent> {
+        let body: Envelope<DiscordScheduledEvent> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/accounts/{id}/discord/events"),
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Change a scheduled event.
+    pub async fn update_discord_event(
+        &self,
+        id: &str,
+        event_id: &str,
+        input: &DiscordEventInput,
+    ) -> Result<DiscordScheduledEvent> {
+        let body: Envelope<DiscordScheduledEvent> = self
+            .http
+            .send(
+                Method::PATCH,
+                &format!("/accounts/{id}/discord/events/{event_id}"),
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Remove a scheduled event.
+    pub async fn delete_discord_event(&self, id: &str, event_id: &str) -> Result<DiscordAck> {
+        self.discord_send(Method::DELETE, id, format!("events/{event_id}"))
+            .await
+    }
+
+    /// The server's roster, or the members whose name starts with `query`.
+    pub async fn discord_members(
+        &self,
+        id: &str,
+        query: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Vec<DiscordMember>> {
+        let mut params: Query = Vec::new();
+        push_opt(&mut params, "q", query);
+        if let Some(limit) = limit {
+            params.push(("limit", limit.to_string()));
+        }
+        let body: Envelope<Vec<DiscordMember>> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/discord/members"),
+                Some(params),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// One member of the server.
+    pub async fn discord_member(&self, id: &str, member_id: &str) -> Result<DiscordMember> {
+        self.discord_get(id, format!("members/{member_id}")).await
+    }
+
+    /// The server's roles, highest first.
+    pub async fn discord_roles(&self, id: &str) -> Result<Vec<DiscordRole>> {
+        self.discord_get(id, "roles".to_string()).await
+    }
+
+    /// Add a role to the server.
+    pub async fn create_discord_role(
+        &self,
+        id: &str,
+        input: &DiscordRoleInput,
+    ) -> Result<DiscordRole> {
+        let body: Envelope<DiscordRole> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/accounts/{id}/discord/roles"),
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Change a role on the server.
+    pub async fn update_discord_role(
+        &self,
+        id: &str,
+        role_id: &str,
+        input: &DiscordRoleInput,
+    ) -> Result<DiscordRole> {
+        let body: Envelope<DiscordRole> = self
+            .http
+            .send(
+                Method::PATCH,
+                &format!("/accounts/{id}/discord/roles/{role_id}"),
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Remove a role from the server.
+    pub async fn delete_discord_role(&self, id: &str, role_id: &str) -> Result<DiscordAck> {
+        self.discord_send(Method::DELETE, id, format!("roles/{role_id}"))
+            .await
+    }
+
+    /// Give a member a role.
+    pub async fn add_discord_member_role(
+        &self,
+        id: &str,
+        role_id: &str,
+        member_id: &str,
+    ) -> Result<DiscordAck> {
+        self.discord_send(
+            Method::PUT,
+            id,
+            format!("roles/{role_id}/members/{member_id}"),
+        )
+        .await
+    }
+
+    /// Take a role from a member.
+    pub async fn remove_discord_member_role(
+        &self,
+        id: &str,
+        role_id: &str,
+        member_id: &str,
+    ) -> Result<DiscordAck> {
+        self.discord_send(
+            Method::DELETE,
+            id,
+            format!("roles/{role_id}/members/{member_id}"),
+        )
+        .await
+    }
+
+    async fn discord_get<T: serde::de::DeserializeOwned>(
+        &self,
+        id: &str,
+        suffix: String,
+    ) -> Result<T> {
+        let body: Envelope<T> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/discord/{suffix}"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    async fn discord_send<T: serde::de::DeserializeOwned>(
+        &self,
+        method: Method,
+        id: &str,
+        suffix: String,
+    ) -> Result<T> {
+        let body: Envelope<T> = self
+            .http
+            .send::<_, ()>(
+                method,
+                &format!("/accounts/{id}/discord/{suffix}"),
                 None,
                 None,
             )
