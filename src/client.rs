@@ -5,8 +5,8 @@ use std::time::Duration;
 use crate::error::{Error, Result};
 use crate::http::{HttpClient, DEFAULT_BASE_URL, USER_AGENT};
 use crate::resources::{
-    AccountGroups, Accounts, Activity, Ads, Analytics, Automations, Inbox, Labels, Media, Posts,
-    Validate, Webhooks, Workspaces,
+    AccountGroups, Accounts, Activity, Ads, Analytics, Automations, Broadcasts, Contacts, Inbox,
+    Knowledge, Labels, Media, Posts, Sequences, Validate, Webhooks, Workspaces,
 };
 
 /// The environment variable the key is read from by [`Client::from_env`].
@@ -114,9 +114,30 @@ impl Client {
         Media { http: &self.http }
     }
 
-    /// Comments, mentions and direct messages on connected accounts.
+    /// The workspace knowledge base, which grounds drafted replies.
+    pub fn knowledge(&self) -> Knowledge<'_> {
+        Knowledge { http: &self.http }
+    }
+
+    /// Comments, mentions, reviews and direct messages on connected accounts.
     pub fn inbox(&self) -> Inbox<'_> {
         Inbox { http: &self.http }
+    }
+
+    /// The people behind the inbox, and the fields kept about them.
+    pub fn contacts(&self) -> Contacts<'_> {
+        Contacts { http: &self.http }
+    }
+
+    /// One message into every conversation the workspace already has with a
+    /// segment of its contacts.
+    pub fn broadcasts(&self) -> Broadcasts<'_> {
+        Broadcasts { http: &self.http }
+    }
+
+    /// A series of messages on a delay, walked per enrolled contact.
+    pub fn sequences(&self) -> Sequences<'_> {
+        Sequences { http: &self.http }
     }
 
     /// Boosts, ads, audiences and lead forms on a Meta Ads connection.
