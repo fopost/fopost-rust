@@ -114,7 +114,7 @@ impl Client {
         Knowledge { http: &self.http }
     }
 
-    /// Comments, mentions and direct messages on connected accounts.
+    /// Comments, mentions, reviews and direct messages on connected accounts.
     pub fn inbox(&self) -> Inbox<'_> {
         Inbox { http: &self.http }
     }
