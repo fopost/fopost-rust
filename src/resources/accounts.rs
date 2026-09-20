@@ -6,14 +6,18 @@ use crate::error::Result;
 use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
     Account, AccountAnalyticsHistory, AccountCreated, AccountDetail, AccountHealth, AccountMoved,
-    AccountRenamed, AccountsHealthSummary, Community, CommunitySearchResult, CreateAccount,
-    CredentialCheck, DiscordAck, DiscordChannel, DiscordEventInput, DiscordIdentity, DiscordMember,
-    DiscordMessage, DiscordMessageRef, DiscordRole, DiscordRoleInput, DiscordScheduledEvent,
-    DiscordThread, DiscordThreadInput, ListAccounts, Message, MetaGreeting, MetaGreetingText,
-    MetaIceBreaker, MetaIceBreakers, MetaPersistentMenu, MetaPersistentMenuEntry, PrimaryToggled,
-    SlackChannel, SlackIdentity, SlackMember, TelegramBotCommand, TelegramBotCommands,
-    TelegramConnectCode, TelegramConnectStatus, TokenRefreshed, UpdateDiscordIdentity,
-    UpdateSlackIdentity, WebhookSubscription,
+    AccountRenamed, AccountsHealthSummary, BlueskyLanguages, Community, CommunitySearchResult,
+    CreateAccount, CreatePinterestBoard, CreateYouTubePlaylist, CredentialCheck, DiscordAck,
+    DiscordChannel, DiscordEventInput, DiscordIdentity, DiscordMember, DiscordMessage,
+    DiscordMessageRef, DiscordRole, DiscordRoleInput, DiscordScheduledEvent, DiscordThread,
+    DiscordThreadInput, InstagramAudio, InstagramPublishingLimit, InstagramStory,
+    InstagramStoryInsights, LinkedInMention, ListAccounts, Message, MetaGreeting, MetaGreetingText,
+    MetaIceBreaker, MetaIceBreakers, MetaPersistentMenu, MetaPersistentMenuEntry, PinterestBoard,
+    PrimaryToggled, SlackChannel, SlackIdentity, SlackMember, TelegramBotCommand,
+    TelegramBotCommands, TelegramConnectCode, TelegramConnectStatus, TikTokCreatorInfo,
+    TikTokMusic, TikTokPlace, TikTokVideoSource, TokenRefreshed, UpdateDiscordIdentity,
+    UpdateSlackIdentity, UploadYouTubeCaptions, WebhookSubscription, YouTubeCaptionTrack,
+    YouTubePlaylist, YouTubeTranscript,
 };
 
 /// Connected accounts, their health, and their X communities.
@@ -909,5 +913,343 @@ impl Accounts<'_> {
             )
             .await?;
         Ok(body.success)
+    }
+
+    // ─── Per-network extras ──────────────────────────────────────
+
+    /// Boards this Pinterest connection can pin to.
+    pub async fn pinterest_boards(&self, id: &str) -> Result<Vec<PinterestBoard>> {
+        let body: Envelope<Vec<PinterestBoard>> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/pinterest/boards"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Create a board on the connected Pinterest account.
+    pub async fn create_pinterest_board(
+        &self,
+        id: &str,
+        board: &CreatePinterestBoard,
+    ) -> Result<PinterestBoard> {
+        let body: Envelope<PinterestBoard> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/accounts/{id}/pinterest/boards"),
+                None,
+                Some(board),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// The channel's own playlists, with the stored default marked.
+    pub async fn youtube_playlists(&self, id: &str) -> Result<Vec<YouTubePlaylist>> {
+        let body: Envelope<Vec<YouTubePlaylist>> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/youtube/playlists"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Create a playlist on the connected channel.
+    pub async fn create_youtube_playlist(
+        &self,
+        id: &str,
+        playlist: &CreateYouTubePlaylist,
+    ) -> Result<YouTubePlaylist> {
+        let body: Envelope<YouTubePlaylist> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/accounts/{id}/youtube/playlists"),
+                None,
+                Some(playlist),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// The playlist a new video joins when the post picks none. `None` clears it.
+    pub async fn set_default_youtube_playlist(
+        &self,
+        id: &str,
+        playlist_id: Option<&str>,
+    ) -> Result<Option<String>> {
+        #[derive(serde::Deserialize)]
+        struct Stored {
+            playlist_id: Option<String>,
+        }
+        let payload = serde_json::json!({ "playlist_id": playlist_id });
+        let body: Envelope<Stored> = self
+            .http
+            .send(
+                Method::PUT,
+                &format!("/accounts/{id}/youtube/playlists/default"),
+                None,
+                Some(&payload),
+            )
+            .await?;
+        Ok(body.data.playlist_id)
+    }
+
+    /// Caption tracks on one of the channel's videos.
+    pub async fn youtube_captions(
+        &self,
+        id: &str,
+        video_id: &str,
+    ) -> Result<Vec<YouTubeCaptionTrack>> {
+        let body: Envelope<Vec<YouTubeCaptionTrack>> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/youtube/videos/{video_id}/captions"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Upload a caption track to a video.
+    pub async fn upload_youtube_captions(
+        &self,
+        id: &str,
+        video_id: &str,
+        captions: &UploadYouTubeCaptions,
+    ) -> Result<YouTubeCaptionTrack> {
+        let body: Envelope<YouTubeCaptionTrack> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/accounts/{id}/youtube/videos/{video_id}/captions"),
+                None,
+                Some(captions),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// One caption track read back as text.
+    pub async fn youtube_transcript(
+        &self,
+        id: &str,
+        caption_id: &str,
+    ) -> Result<YouTubeTranscript> {
+        let body: Envelope<YouTubeTranscript> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/youtube/captions/{caption_id}"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// What a post from this Bluesky connection is written in when it does not say.
+    pub async fn bluesky_languages(&self, id: &str) -> Result<BlueskyLanguages> {
+        let body: Envelope<BlueskyLanguages> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/bluesky/languages"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Store up to three BCP-47 tags. An empty slice clears the default.
+    pub async fn set_bluesky_languages(
+        &self,
+        id: &str,
+        languages: &[String],
+    ) -> Result<BlueskyLanguages> {
+        let payload = serde_json::json!({ "languages": languages });
+        let body: Envelope<BlueskyLanguages> = self
+            .http
+            .send(
+                Method::PUT,
+                &format!("/accounts/{id}/bluesky/languages"),
+                None,
+                Some(&payload),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// The switches TikTok enforces at publish time, changed in the TikTok app.
+    pub async fn tiktok_creator_info(&self, id: &str) -> Result<TikTokCreatorInfo> {
+        let body: Envelope<TikTokCreatorInfo> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/tiktok/creator-info"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// TikTok's Commercial Music Library. Needs the Marketing API product on the
+    /// TikTok app; without it the call fails with 403 rather than answering empty.
+    pub async fn tiktok_music(
+        &self,
+        id: &str,
+        query: &str,
+        limit: Option<u32>,
+    ) -> Result<Vec<TikTokMusic>> {
+        let mut params: Query = vec![("q", query.to_string())];
+        push_opt(&mut params, "limit", limit);
+        let body: Envelope<Vec<TikTokMusic>> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/tiktok/music"),
+                Some(params),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Places a post can be tagged with. Same TikTok product as the music library.
+    pub async fn tiktok_locations(
+        &self,
+        id: &str,
+        query: &str,
+        limit: Option<u32>,
+    ) -> Result<Vec<TikTokPlace>> {
+        let mut params: Query = vec![("q", query.to_string())];
+        push_opt(&mut params, "limit", limit);
+        let body: Envelope<Vec<TikTokPlace>> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/tiktok/locations"),
+                Some(params),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Resolve a share link to one of this account's own videos, for repurposing.
+    pub async fn tiktok_video_lookup(&self, id: &str, url: &str) -> Result<TikTokVideoSource> {
+        let payload = serde_json::json!({ "url": url });
+        let body: Envelope<TikTokVideoSource> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/accounts/{id}/tiktok/video-download"),
+                None,
+                Some(&payload),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Tracks a Reel can carry. With no query Instagram answers with what is trending.
+    pub async fn instagram_audio(
+        &self,
+        id: &str,
+        query: Option<&str>,
+        audio_type: Option<&str>,
+    ) -> Result<Vec<InstagramAudio>> {
+        let mut params: Query = Vec::new();
+        push_opt(&mut params, "q", query);
+        push_opt(&mut params, "audio_type", audio_type);
+        let body: Envelope<Vec<InstagramAudio>> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/instagram/audio"),
+                Some(params),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// How many posts are left before Instagram refuses the next one.
+    pub async fn instagram_publishing_limit(&self, id: &str) -> Result<InstagramPublishingLimit> {
+        let body: Envelope<InstagramPublishingLimit> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/instagram/publishing-limit"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Stories still inside their 24 hours, posted through FoPost or not.
+    /// Asking for insights costs one extra call per story.
+    pub async fn instagram_stories(&self, id: &str, insights: bool) -> Result<Vec<InstagramStory>> {
+        let mut params: Query = Vec::new();
+        if insights {
+            params.push(("insights", "true".to_string()));
+        }
+        let body: Envelope<Vec<InstagramStory>> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/instagram/stories"),
+                Some(params),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// The insight set for one story.
+    pub async fn instagram_story_insights(
+        &self,
+        id: &str,
+        story_id: &str,
+    ) -> Result<InstagramStoryInsights> {
+        let body: Envelope<InstagramStoryInsights> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/instagram/stories/{story_id}/insights"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Organizations a LinkedIn post can mention. People are not searchable:
+    /// LinkedIn has no public person search.
+    pub async fn linkedin_mentions(&self, id: &str, query: &str) -> Result<Vec<LinkedInMention>> {
+        let params: Query = vec![("q", query.to_string())];
+        let body: Envelope<Vec<LinkedInMention>> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/linkedin/mentions"),
+                Some(params),
+                None,
+            )
+            .await?;
+        Ok(body.data)
     }
 }
