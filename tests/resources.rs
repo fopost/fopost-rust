@@ -8,11 +8,11 @@ use common::{account_fixture, client};
 use fopost::models::{
     AdBudget, AdGoal, AdInsightsQuery, AdKind, AdObjectLevel, AdObjectQuery, AdObjectRef, AdStatus,
     AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceSpec, BoostPost, CreateAccountGroup,
-    CreateAudience, CreateAutomation, CreateWebhook, InboxItemState, InboxItemType, InboxReply,
-    InboxSort, InsightsBreakdown, InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts,
-    ListInbox, MarkThreadRead, Platform, SetAdStatuses, SignalLevel, StartInboxConversation,
-    TelegramBotCommand, TriggerType, UpdateInboxItem, UpdateSlackIdentity, ValidateLength,
-    ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
+    CreateAudience, CreateAutomation, CreateWebhook, CreateWhatsappTemplate, InboxItemState,
+    InboxItemType, InboxReply, InboxSort, InsightsBreakdown, InsightsQuery, LeadsFeedQuery,
+    LeadsQuery, ListAccounts, ListInbox, MarkThreadRead, Platform, SetAdStatuses, SignalLevel,
+    StartInboxConversation, TelegramBotCommand, TriggerType, UpdateInboxItem, UpdateSlackIdentity,
+    ValidateLength, ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1464,4 +1464,107 @@ async fn validating_media_sends_the_url_and_reads_the_type_field() {
     assert_eq!(result.size, 1024);
     assert_eq!(result.mime_type.as_deref(), Some("image/png"));
     assert_eq!(result.media_type.as_deref(), Some("image"));
+}
+
+#[tokio::test]
+async fn whatsapp_create_template_returns_the_review_status_the_platform_gave_it() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/accounts/acc_1/whatsapp/templates"))
+        .and(body_json(serde_json::json!({
+            "name": "order_shipped",
+            "language": "en_US",
+            "category": "UTILITY",
+            "components": [{"type": "BODY", "text": "On its way."}],
+        })))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": {
+                "id": "tpl-1",
+                "name": "order_shipped",
+                "language": "en_US",
+                "category": "UTILITY",
+                "status": "PENDING",
+                "rejectedReason": null,
+                "components": [],
+                "qualityScore": null,
+            }})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let template = client(&server)
+        .await
+        .whatsapp()
+        .create_template(
+            "acc_1",
+            &CreateWhatsappTemplate::new(
+                "order_shipped",
+                "en_US",
+                "UTILITY",
+                vec![serde_json::json!({"type": "BODY", "text": "On its way."})],
+            ),
+        )
+        .await
+        .expect("create_template");
+
+    // Nothing marks a template approved but the platform.
+    assert_eq!(template.status, "PENDING");
+}
+
+#[tokio::test]
+async fn whatsapp_delete_template_names_it_in_the_query() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/v1/accounts/acc_1/whatsapp/templates/tpl-1"))
+        .and(query_param("name", "order_shipped"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"deleted": true}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    client(&server)
+        .await
+        .whatsapp()
+        .delete_template("acc_1", "tpl-1", "order_shipped")
+        .await
+        .expect("delete_template");
+}
+
+#[tokio::test]
+async fn whatsapp_sandbox_session_carries_only_the_last_four_digits() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/whatsapp/sandbox/sessions"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": {
+                "id": "ses-1",
+                "status": "invited",
+                "phoneNumberLast4": "4567",
+                "invitedAt": "2026-09-20T10:00:00Z",
+                "activatedAt": null,
+                "expiresAt": "2026-09-21T10:00:00Z",
+            }})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let session = client(&server)
+        .await
+        .whatsapp()
+        .create_sandbox_session("ws_1", "+15551234567")
+        .await
+        .expect("create_sandbox_session");
+
+    assert_eq!(session.phone_number_last4, "4567");
+    assert_eq!(session.status, "invited");
+}
+
+#[test]
+fn whatsapp_is_a_platform_variant() {
+    assert_eq!(Platform::Whatsapp.as_str(), "whatsapp");
 }
