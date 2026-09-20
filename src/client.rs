@@ -5,8 +5,8 @@ use std::time::Duration;
 use crate::error::{Error, Result};
 use crate::http::{HttpClient, DEFAULT_BASE_URL, USER_AGENT};
 use crate::resources::{
-    AccountGroups, Accounts, Ads, Analytics, Automations, Broadcasts, Contacts, Inbox, Knowledge,
-    Labels, Media, Posts, Sequences, Validate, Webhooks, Workspaces,
+    AccountGroups, Accounts, Activity, Ads, Analytics, Automations, Broadcasts, Contacts, Inbox,
+    Knowledge, Labels, Media, Posts, Sequences, Validate, Webhooks, Workspaces,
 };
 
 /// The environment variable the key is read from by [`Client::from_env`].
@@ -82,6 +82,11 @@ impl Client {
     /// Workspaces.
     pub fn workspaces(&self) -> Workspaces<'_> {
         Workspaces { http: &self.http }
+    }
+
+    /// What happened in a workspace, and the security audit log.
+    pub fn activity(&self) -> Activity<'_> {
+        Activity { http: &self.http }
     }
 
     /// Labels.

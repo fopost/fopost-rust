@@ -11,6 +11,7 @@
 
 pub mod account_groups;
 pub mod accounts;
+pub mod activity;
 pub mod ads;
 pub mod analytics;
 pub mod automations;
@@ -28,6 +29,7 @@ pub mod workspaces;
 
 pub use account_groups::*;
 pub use accounts::*;
+pub use activity::*;
 pub use ads::*;
 pub use analytics::*;
 pub use automations::*;
