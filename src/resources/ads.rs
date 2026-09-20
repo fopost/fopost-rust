@@ -14,13 +14,13 @@ use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
     Ad, AdAccountTree, AdAudience, AdAudiences, AdCampaign, AdConnection, AdCreatives,
     AdInsightsQuery, AdObjectQuery, AdSet, AdSource, AdStatus, AdStatusResult, ArchiveLeadForm,
-    AudienceCreated, AudiencesQuery, AuthorizeMetaAds, BoostPost, BoostablePost, CreateAd,
-    CreateAdSet, CreateAudience, CreateCampaign, CreateCreative, CreateLeadForm, CreateNetworkAd,
-    Creative, CreativesQuery, EstimateReach, ExternalAd, InsightsQuery, InsightsReport,
-    LeadFormDetail, LeadFormQuery, LeadFormSource, LeadPage, LeadPageSubscribed, LeadsFeedPage,
-    LeadsFeedQuery, LeadsPage, LeadsQuery, Message, NetworkAd, ReachEstimate, SetAdStatus,
-    SetAdStatuses, SubscribeLeadPage, TargetingOption, TargetingSearch, UpdateAdSet,
-    UpdateAudience, UpdateCampaign, UpdateNetworkAd,
+    AudienceCreated, AudiencesQuery, AuthorizeGoogleAds, AuthorizeMetaAds, BoostPost,
+    BoostablePost, CreateAd, CreateAdSet, CreateAudience, CreateCampaign, CreateCreative,
+    CreateLeadForm, CreateNetworkAd, Creative, CreativesQuery, EstimateReach, ExternalAd,
+    InsightsQuery, InsightsReport, LeadFormDetail, LeadFormQuery, LeadFormSource, LeadPage,
+    LeadPageSubscribed, LeadsFeedPage, LeadsFeedQuery, LeadsPage, LeadsQuery, Message, NetworkAd,
+    ReachEstimate, SetAdStatus, SetAdStatuses, SubscribeLeadPage, TargetingOption, TargetingSearch,
+    UpdateAdSet, UpdateAudience, UpdateCampaign, UpdateNetworkAd,
 };
 
 /// Ads.
@@ -131,6 +131,26 @@ impl Ads<'_> {
             .send(
                 Method::POST,
                 "/ads/connections/meta/authorize",
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(body.data.url)
+    }
+
+    /// The Google login URL. The caller finishes it in their own browser
+    /// session: the callback checks that the same user came back.
+    pub async fn authorize_google(&self, input: &AuthorizeGoogleAds) -> Result<String> {
+        #[derive(serde::Deserialize)]
+        struct Authorized {
+            #[serde(default)]
+            url: String,
+        }
+        let body: Envelope<Authorized> = self
+            .http
+            .send(
+                Method::POST,
+                "/ads/connections/google/authorize",
                 None,
                 Some(input),
             )

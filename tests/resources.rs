@@ -7,12 +7,14 @@ mod common;
 use common::{account_fixture, client};
 use fopost::models::{
     AdBudget, AdGoal, AdInsightsQuery, AdKind, AdObjectLevel, AdObjectQuery, AdObjectRef, AdStatus,
-    AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceSpec, BoostPost, CreateAccountGroup,
-    CreateAudience, CreateAutomation, CreateWebhook, InboxItemState, InboxItemType, InboxReply,
-    InboxSort, InsightsBreakdown, InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts,
-    ListInbox, MarkThreadRead, Platform, SetAdStatuses, SignalLevel, StartInboxConversation,
-    TelegramBotCommand, TriggerType, UpdateInboxItem, UpdateSlackIdentity, ValidateLength,
-    ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
+    AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceSpec, AuthorizeGoogleAds, BoostPost,
+    CreateAccountGroup, CreateAudience, CreateAutomation, CreateGoogleKeyword, CreateWebhook,
+    GoogleAdScheduleInput, GoogleDayOfWeek, GoogleMatchType, GoogleQuery, GoogleScope,
+    InboxItemState, InboxItemType, InboxReply, InboxSort, InsightsBreakdown, InsightsQuery,
+    LeadsFeedQuery, LeadsQuery, ListAccounts, ListInbox, MarkThreadRead, Platform, SetAdStatuses,
+    SetGoogleAdSchedule, SignalLevel, StartInboxConversation, TelegramBotCommand, TriggerType,
+    UpdateInboxItem, UpdateSlackIdentity, ValidateLength, ValidateMedia, ValidateMediaItem,
+    ValidatePost, WebhookEvent,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1464,4 +1466,159 @@ async fn validating_media_sends_the_url_and_reads_the_type_field() {
     assert_eq!(result.size, 1024);
     assert_eq!(result.mime_type.as_deref(), Some("image/png"));
     assert_eq!(result.media_type.as_deref(), Some("image"));
+}
+
+// ─── Google Ads ────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn google_keywords_name_the_connection_and_the_customer() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/ads/google/keywords"))
+        .and(query_param("connection_id", "conn_1"))
+        .and(query_param("customer_id", "1234567890"))
+        .and(query_param("ad_group_id", "1234567890~adGroup~77"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{
+                "id": "1234567890~keyword~77~99",
+                "adGroupId": "1234567890~adGroup~77",
+                "text": "running shoes",
+                "matchType": "EXACT",
+                "status": "ENABLED",
+                "cpcBidMinor": 180,
+                "negative": false
+            }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let scope = GoogleScope::new("conn_1", "1234567890");
+    let keywords = client
+        .google_ads()
+        .keywords(&scope, Some("1234567890~adGroup~77"))
+        .await
+        .expect("keywords");
+
+    assert_eq!(keywords[0].text, "running shoes");
+    assert_eq!(keywords[0].cpc_bid_minor, Some(180));
+}
+
+#[tokio::test]
+async fn google_create_keyword_sends_the_scope_in_the_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/ads/google/keywords"))
+        .and(body_json(serde_json::json!({
+            "workspaceId": "ws_1",
+            "connectionId": "conn_1",
+            "customerId": "1234567890",
+            "adGroupId": "1234567890~adGroup~77",
+            "text": "running shoes",
+            "matchType": "EXACT"
+        })))
+        .respond_with(
+            ResponseTemplate::new(201)
+                .set_body_json(serde_json::json!({"data": {"id": "1234567890~keyword~77~99"}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let id = client
+        .google_ads()
+        .create_keyword(&CreateGoogleKeyword {
+            scope: GoogleScope::new("conn_1", "1234567890").in_workspace("ws_1"),
+            ad_group_id: "1234567890~adGroup~77".into(),
+            text: "running shoes".into(),
+            match_type: GoogleMatchType::Exact,
+            cpc_bid_minor: None,
+        })
+        .await
+        .expect("create_keyword");
+
+    assert_eq!(id, "1234567890~keyword~77~99");
+}
+
+#[tokio::test]
+async fn google_ad_schedule_is_replaced_with_put() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/v1/ads/google/ad-schedule"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": {"slots": 2}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let slots = client
+        .google_ads()
+        .set_ad_schedule(&SetGoogleAdSchedule {
+            scope: GoogleScope::new("conn_1", "1234567890").in_workspace("ws_1"),
+            campaign_id: "1234567890~campaign~55".into(),
+            slots: vec![GoogleAdScheduleInput {
+                day_of_week: GoogleDayOfWeek::Monday,
+                start_hour: 9,
+                end_hour: 18,
+                bid_modifier: None,
+            }],
+        })
+        .await
+        .expect("set_ad_schedule");
+
+    assert_eq!(slots, 2);
+}
+
+#[tokio::test]
+async fn google_query_returns_rows_as_google_sends_them() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/ads/insights/query"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"rows": [{"campaign": {"id": "55"}}]}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let result = client
+        .google_ads()
+        .query(&GoogleQuery {
+            scope: GoogleScope::new("conn_1", "1234567890"),
+            query: "SELECT campaign.id FROM campaign".into(),
+        })
+        .await
+        .expect("query");
+
+    assert_eq!(result.rows.len(), 1);
+}
+
+#[tokio::test]
+async fn authorize_google_has_its_own_route() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/ads/connections/google/authorize"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({"data": {"url": "https://accounts.google.com/o/x"}}),
+            ),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let url = client
+        .ads()
+        .authorize_google(&AuthorizeGoogleAds::new("ws_1"))
+        .await
+        .expect("authorize_google");
+
+    assert_eq!(url, "https://accounts.google.com/o/x");
 }
