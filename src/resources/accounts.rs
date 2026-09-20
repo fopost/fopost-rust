@@ -9,9 +9,11 @@ use crate::models::{
     AccountRenamed, AccountsHealthSummary, Community, CommunitySearchResult, CreateAccount,
     CredentialCheck, DiscordAck, DiscordChannel, DiscordEventInput, DiscordIdentity, DiscordMember,
     DiscordMessage, DiscordMessageRef, DiscordRole, DiscordRoleInput, DiscordScheduledEvent,
-    DiscordThread, DiscordThreadInput, ListAccounts, Message, PrimaryToggled, SlackChannel,
-    SlackIdentity, SlackMember, TelegramBotCommand, TelegramBotCommands, TelegramConnectCode,
-    TelegramConnectStatus, TokenRefreshed, UpdateDiscordIdentity, UpdateSlackIdentity,
+    DiscordThread, DiscordThreadInput, ListAccounts, Message, MetaGreeting, MetaGreetingText,
+    MetaIceBreaker, MetaIceBreakers, MetaPersistentMenu, MetaPersistentMenuEntry, PrimaryToggled,
+    SlackChannel, SlackIdentity, SlackMember, TelegramBotCommand, TelegramBotCommands,
+    TelegramConnectCode, TelegramConnectStatus, TokenRefreshed, UpdateDiscordIdentity,
+    UpdateSlackIdentity, WebhookSubscription,
 };
 
 /// Connected accounts, their health, and their X communities.
@@ -237,6 +239,177 @@ impl Accounts<'_> {
                 &format!("/accounts/{id}/slack/identity"),
                 None,
                 Some(identity),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    // ─── Meta messaging settings (Facebook Pages, Instagram) ─────
+
+    /// The prompts shown before the first message. A network without them answers `400`.
+    pub async fn ice_breakers(&self, id: &str) -> Result<MetaIceBreakers> {
+        let body: Envelope<MetaIceBreakers> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/messaging/ice-breakers"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Replace the ice breakers, up to four.
+    pub async fn set_ice_breakers(
+        &self,
+        id: &str,
+        ice_breakers: &[MetaIceBreaker],
+    ) -> Result<MetaIceBreakers> {
+        let payload = serde_json::json!({ "ice_breakers": ice_breakers });
+        let body: Envelope<MetaIceBreakers> = self
+            .http
+            .send(
+                Method::PUT,
+                &format!("/accounts/{id}/messaging/ice-breakers"),
+                None,
+                Some(&payload),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Clear the ice breakers.
+    pub async fn delete_ice_breakers(&self, id: &str) -> Result<MetaIceBreakers> {
+        let body: Envelope<MetaIceBreakers> = self
+            .http
+            .send::<_, ()>(
+                Method::DELETE,
+                &format!("/accounts/{id}/messaging/ice-breakers"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// The always-visible Messenger menu. Facebook Pages only.
+    pub async fn persistent_menu(&self, id: &str) -> Result<MetaPersistentMenu> {
+        let body: Envelope<MetaPersistentMenu> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/messaging/persistent-menu"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Replace the menu, one entry per locale, up to three items each.
+    pub async fn set_persistent_menu(
+        &self,
+        id: &str,
+        menu: &[MetaPersistentMenuEntry],
+    ) -> Result<MetaPersistentMenu> {
+        let payload = serde_json::json!({ "persistent_menu": menu });
+        let body: Envelope<MetaPersistentMenu> = self
+            .http
+            .send(
+                Method::PUT,
+                &format!("/accounts/{id}/messaging/persistent-menu"),
+                None,
+                Some(&payload),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Clear the menu.
+    pub async fn delete_persistent_menu(&self, id: &str) -> Result<MetaPersistentMenu> {
+        let body: Envelope<MetaPersistentMenu> = self
+            .http
+            .send::<_, ()>(
+                Method::DELETE,
+                &format!("/accounts/{id}/messaging/persistent-menu"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// The text shown before a Messenger conversation starts. Facebook Pages only.
+    pub async fn greeting(&self, id: &str) -> Result<MetaGreeting> {
+        let body: Envelope<MetaGreeting> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/messaging/greeting"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Replace the greeting, one entry per locale, each up to 160 characters.
+    pub async fn set_greeting(
+        &self,
+        id: &str,
+        greeting: &[MetaGreetingText],
+    ) -> Result<MetaGreeting> {
+        let payload = serde_json::json!({ "greeting": greeting });
+        let body: Envelope<MetaGreeting> = self
+            .http
+            .send(
+                Method::PUT,
+                &format!("/accounts/{id}/messaging/greeting"),
+                None,
+                Some(&payload),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Clear the greeting.
+    pub async fn delete_greeting(&self, id: &str) -> Result<MetaGreeting> {
+        let body: Envelope<MetaGreeting> = self
+            .http
+            .send::<_, ()>(
+                Method::DELETE,
+                &format!("/accounts/{id}/messaging/greeting"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// What the network is delivering to the FoPost webhook for this account.
+    pub async fn webhook_subscription(&self, id: &str) -> Result<WebhookSubscription> {
+        let body: Envelope<WebhookSubscription> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/accounts/{id}/webhook-subscription"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Subscribe to every field this account needs, lapsed or not.
+    pub async fn resubscribe_webhook(&self, id: &str) -> Result<WebhookSubscription> {
+        let body: Envelope<WebhookSubscription> = self
+            .http
+            .send::<_, ()>(
+                Method::POST,
+                &format!("/accounts/{id}/webhook-subscription"),
+                None,
+                None,
             )
             .await?;
         Ok(body.data)

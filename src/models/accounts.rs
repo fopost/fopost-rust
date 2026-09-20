@@ -162,6 +162,134 @@ pub struct TelegramBotCommands {
     pub commands: Vec<TelegramBotCommand>,
 }
 
+/// A tappable prompt Messenger or Instagram shows before the first message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetaIceBreaker {
+    /// Up to 80 characters.
+    pub question: String,
+    /// What the webhook receives when the prompt is tapped.
+    pub payload: String,
+}
+
+impl MetaIceBreaker {
+    pub fn new(question: impl Into<String>, payload: impl Into<String>) -> Self {
+        Self {
+            question: question.into(),
+            payload: payload.into(),
+        }
+    }
+}
+
+/// The ice breakers set on one account.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MetaIceBreakers {
+    #[serde(default)]
+    pub ice_breakers: Vec<MetaIceBreaker>,
+}
+
+/// A persistent-menu item: a `postback` carrying `payload`, or a `web_url` carrying `url`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetaMenuItem {
+    /// `postback` or `web_url`.
+    pub r#type: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload: Option<String>,
+    /// Must be http(s).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+impl MetaMenuItem {
+    pub fn postback(title: impl Into<String>, payload: impl Into<String>) -> Self {
+        Self {
+            r#type: "postback".into(),
+            title: title.into(),
+            payload: Some(payload.into()),
+            url: None,
+        }
+    }
+
+    pub fn link(title: impl Into<String>, url: impl Into<String>) -> Self {
+        Self {
+            r#type: "web_url".into(),
+            title: title.into(),
+            payload: None,
+            url: Some(url.into()),
+        }
+    }
+}
+
+/// One locale's menu; `default` is the fallback every language uses.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetaPersistentMenuEntry {
+    #[serde(default = "default_locale")]
+    pub locale: String,
+    #[serde(default)]
+    pub call_to_actions: Vec<MetaMenuItem>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composer_input_disabled: Option<bool>,
+}
+
+impl MetaPersistentMenuEntry {
+    /// The default-locale menu, the one every language falls back to.
+    pub fn default_locale(items: Vec<MetaMenuItem>) -> Self {
+        Self {
+            locale: default_locale(),
+            call_to_actions: items,
+            composer_input_disabled: None,
+        }
+    }
+}
+
+fn default_locale() -> String {
+    "default".to_string()
+}
+
+/// The persistent menu set on one account, one entry per locale.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MetaPersistentMenu {
+    #[serde(default)]
+    pub persistent_menu: Vec<MetaPersistentMenuEntry>,
+}
+
+/// One locale's greeting, up to 160 characters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetaGreetingText {
+    #[serde(default = "default_locale")]
+    pub locale: String,
+    pub text: String,
+}
+
+impl MetaGreetingText {
+    /// The default-locale greeting.
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            locale: default_locale(),
+            text: text.into(),
+        }
+    }
+}
+
+/// The greeting set on one account, one entry per locale.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MetaGreeting {
+    #[serde(default)]
+    pub greeting: Vec<MetaGreetingText>,
+}
+
+/// What the network delivers to the FoPost webhook for one account.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct WebhookSubscription {
+    /// False when the subscription lapsed or a required field is missing.
+    #[serde(default)]
+    pub subscribed: bool,
+    #[serde(default)]
+    pub fields: Vec<String>,
+    #[serde(default)]
+    pub missing_fields: Vec<String>,
+}
+
 /// A channel a Slack account can post to.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SlackChannel {
