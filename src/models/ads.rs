@@ -704,6 +704,11 @@ pub struct CreateAd {
     /// Query string appended to every link in the ad, e.g. `utm_source=meta&utm_medium=paid`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url_tags: Option<String>,
+    /// A post already live on the network, from `spark_posts()`. Runs it as a
+    /// Spark ad, so `text`, `headline` and `media_url` are ignored. Needs the
+    /// network's `sparkAds` capability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spark_post_id: Option<String>,
     /// Default `true`: created paused, spending nothing until resumed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub paused: Option<bool>,
@@ -736,6 +741,7 @@ impl CreateAd {
             destination_url: None,
             media_url: None,
             url_tags: None,
+            spark_post_id: None,
             paused: None,
         }
     }
@@ -757,6 +763,12 @@ impl CreateAd {
 
     pub fn url_tags(mut self, url_tags: impl Into<String>) -> Self {
         self.url_tags = Some(url_tags.into());
+        self
+    }
+
+    /// Run a post already live on the network as a Spark ad.
+    pub fn spark_post_id(mut self, spark_post_id: impl Into<String>) -> Self {
+        self.spark_post_id = Some(spark_post_id.into());
         self
     }
 
@@ -1168,6 +1180,10 @@ pub struct CreateCampaign {
     pub goal: AdGoal,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub paused: Option<bool>,
+    /// Hands targeting and creative rotation to the network. Needs its
+    /// `smartPlus` capability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub smart_plus: Option<bool>,
 }
 
 impl CreateCampaign {
@@ -1185,12 +1201,19 @@ impl CreateCampaign {
             name: name.into(),
             goal,
             paused: None,
+            smart_plus: None,
         }
     }
 
     /// `false` to start delivering at once.
     pub fn paused(mut self, paused: bool) -> Self {
         self.paused = Some(paused);
+        self
+    }
+
+    /// Hands targeting and creative rotation to the network.
+    pub fn smart_plus(mut self, smart_plus: bool) -> Self {
+        self.smart_plus = Some(smart_plus);
         self
     }
 }
@@ -2042,4 +2065,259 @@ pub struct LeadPageSubscribed {
     pub page_id: String,
     #[serde(default)]
     pub backfilled: u64,
+}
+
+/// A Business Center, or the network's equivalent grouping of ad accounts.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdBusinessCenter {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub role: Option<String>,
+}
+
+/// The account an ad runs as. Meta calls it a Page, TikTok an identity; an
+/// identity id is what every route calls a `page_id`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdIdentity {
+    pub id: String,
+    /// The network's own identity kind, e.g. `CUSTOMIZED_USER`.
+    #[serde(default)]
+    pub r#type: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
+}
+
+/// A post already live on the network, offered as the source of a Spark ad.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SparkPost {
+    pub id: String,
+    #[serde(default)]
+    pub identity_id: String,
+    #[serde(default)]
+    pub caption: Option<String>,
+    #[serde(default)]
+    pub thumbnail_url: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub views: Option<i64>,
+}
+
+/// A comment on an ad, read live from the network and never stored.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdComment {
+    pub id: String,
+    #[serde(default)]
+    pub ad_id: Option<String>,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub author_name: Option<String>,
+    #[serde(default)]
+    pub author_avatar_url: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub likes: i64,
+    #[serde(default)]
+    pub reply_count: i64,
+    #[serde(default)]
+    pub hidden: bool,
+    /// The comment this one answers, when it is not on the ad itself.
+    #[serde(default)]
+    pub parent_id: Option<String>,
+}
+
+/// One page of an ad's comments; pass `next_cursor` back as `after`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdCommentsPage {
+    #[serde(default)]
+    pub comments: Vec<AdComment>,
+    #[serde(default)]
+    pub next_cursor: Option<String>,
+}
+
+/// Names the identity whose posts to list.
+#[derive(Debug, Clone)]
+pub struct SparkPostsQuery {
+    pub connection_id: String,
+    pub ad_account_id: String,
+    pub identity_id: String,
+    pub workspace_id: Option<String>,
+}
+
+impl SparkPostsQuery {
+    pub fn new(
+        connection_id: impl Into<String>,
+        ad_account_id: impl Into<String>,
+        identity_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            connection_id: connection_id.into(),
+            ad_account_id: ad_account_id.into(),
+            identity_id: identity_id.into(),
+            workspace_id: None,
+        }
+    }
+
+    pub fn workspace_id(mut self, workspace_id: impl Into<String>) -> Self {
+        self.workspace_id = Some(workspace_id.into());
+        self
+    }
+}
+
+/// Names the ad whose comments to read.
+#[derive(Debug, Clone)]
+pub struct AdCommentsQuery {
+    pub connection_id: String,
+    pub ad_id: String,
+    /// The previous page's `next_cursor`.
+    pub after: Option<String>,
+    pub workspace_id: Option<String>,
+}
+
+impl AdCommentsQuery {
+    pub fn new(connection_id: impl Into<String>, ad_id: impl Into<String>) -> Self {
+        Self {
+            connection_id: connection_id.into(),
+            ad_id: ad_id.into(),
+            after: None,
+            workspace_id: None,
+        }
+    }
+
+    pub fn after(mut self, after: impl Into<String>) -> Self {
+        self.after = Some(after.into());
+        self
+    }
+
+    pub fn workspace_id(mut self, workspace_id: impl Into<String>) -> Self {
+        self.workspace_id = Some(workspace_id.into());
+        self
+    }
+}
+
+/// One offline conversion. Identifiers are hashed by the API before anything
+/// leaves FoPost.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversionEvent {
+    pub event_name: String,
+    /// ISO 8601.
+    pub occurred_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone: Option<String>,
+    /// Account currency, minor units.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_minor: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_id: Option<String>,
+}
+
+impl ConversionEvent {
+    pub fn new(event_name: impl Into<String>, occurred_at: impl Into<String>) -> Self {
+        Self {
+            event_name: event_name.into(),
+            occurred_at: occurred_at.into(),
+            email: None,
+            phone: None,
+            value_minor: None,
+            currency: None,
+            order_id: None,
+        }
+    }
+
+    pub fn email(mut self, email: impl Into<String>) -> Self {
+        self.email = Some(email.into());
+        self
+    }
+
+    pub fn value(mut self, value_minor: i64, currency: impl Into<String>) -> Self {
+        self.value_minor = Some(value_minor);
+        self.currency = Some(currency.into());
+        self
+    }
+}
+
+/// The body of `POST /ads/conversions`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadConversions {
+    pub workspace_id: String,
+    pub connection_id: String,
+    pub ad_account_id: String,
+    /// A pixel the ad account owns, from `audiences()`.
+    pub pixel_id: String,
+    /// Up to 1000 per call.
+    pub events: Vec<ConversionEvent>,
+}
+
+/// How many events the network accepted.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversionsAccepted {
+    #[serde(default)]
+    pub accepted: i64,
+}
+
+/// The reply's id on the network.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdCommentReply {
+    #[serde(default)]
+    pub reply_id: String,
+}
+
+/// Scopes a comment write; the comment id travels in the path.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdCommentWrite {
+    pub workspace_id: String,
+    pub connection_id: String,
+    pub ad_id: String,
+    /// The reply, on `reply_to_comment` only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// The new state, on `set_comment_hidden` only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hidden: Option<bool>,
+}
+
+impl AdCommentWrite {
+    pub fn new(
+        workspace_id: impl Into<String>,
+        connection_id: impl Into<String>,
+        ad_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            workspace_id: workspace_id.into(),
+            connection_id: connection_id.into(),
+            ad_id: ad_id.into(),
+            text: None,
+            hidden: None,
+        }
+    }
+
+    pub fn text(mut self, text: impl Into<String>) -> Self {
+        self.text = Some(text.into());
+        self
+    }
+
+    pub fn hidden(mut self, hidden: bool) -> Self {
+        self.hidden = Some(hidden);
+        self
+    }
 }
