@@ -76,6 +76,7 @@ string_enum! {
         Slack => "slack",
         Reddit => "reddit",
         Pinterest => "pinterest",
+        Snapchat => "snapchat",
         Tumblr => "tumblr",
         Dribbble => "dribbble",
         Mewe => "mewe",
