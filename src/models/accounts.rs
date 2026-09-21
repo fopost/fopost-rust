@@ -495,6 +495,52 @@ pub struct AccountAnalyticsHistory {
     pub history: Vec<AccountHistoryPoint>,
 }
 
+/// One metric a network reports under its own name.
+///
+/// `key` is the platform's own name and is stable; `label` is ours and may be
+/// reworded, so match on `key`. `value` is a number for every `kind` but
+/// `"series"`, which is an array of points.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PlatformMetricRow {
+    pub key: String,
+    #[serde(default)]
+    pub label: String,
+    /// One of `count`, `duration_ms`, `currency_usd`, `ratio`, `series`.
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub value: serde_json::Value,
+}
+
+impl PlatformMetricRow {
+    /// The value as a number, or `None` for a series or a non-numeric answer.
+    pub fn as_number(&self) -> Option<f64> {
+        self.value.as_f64()
+    }
+}
+
+/// One side of a per-network metric set: the account itself, or its newest
+/// measured post. `external_post_id` is absent on the account side.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PlatformMetricsBlock {
+    #[serde(default)]
+    pub fetched_at: Option<String>,
+    #[serde(default)]
+    pub external_post_id: Option<String>,
+    #[serde(default)]
+    pub metrics: Vec<PlatformMetricRow>,
+}
+
+/// What only this network reports, in its own vocabulary: ad-break earnings,
+/// story taps, a retention curve, the search terms behind a listing.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AccountPlatformMetrics {
+    #[serde(default)]
+    pub platform: Option<String>,
+    pub account: PlatformMetricsBlock,
+    pub post: PlatformMetricsBlock,
+}
+
 /// An X community an account can post into.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
