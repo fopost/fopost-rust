@@ -4,7 +4,7 @@
 mod common;
 
 use common::client;
-use fopost::models::{AdCompany, AdObjectQuery, AuthorizeMetaAds, ConversionEvent};
+use fopost::models::{AdCompany, AdObjectQuery, AuthorizeMetaAds, ConversionApiEvent};
 use wiremock::matchers::{body_json, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -115,7 +115,7 @@ async fn conversion_events_send_the_identity_the_api_hashes() {
         .send_conversion_events(
             "urn:li:conversion:9",
             &AdObjectQuery::new("conn_1").workspace("ws_1"),
-            &[ConversionEvent {
+            &[ConversionApiEvent {
                 happened_at: 1_758_326_400_000,
                 email: Some("buyer@example.test".into()),
                 ..Default::default()

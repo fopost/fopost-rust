@@ -1,28 +1,40 @@
 //! `client.ads()` — boosts, standalone ads, the campaign tree, creatives,
-//! audiences, insights and lead forms on a Meta Ads connection.
+//! catalogs, audiences, predictions, the public ad archive, insights, lead
+//! forms and ad comments. The connection decides which network a call reaches,
+//! so the same methods run Meta, Google and TikTok.
 //!
 //! Every call needs the `ads` scope. The calls that spend money also need
 //! `publish`: [`Ads::boost`], [`Ads::create`], [`Ads::set_status`],
 //! [`Ads::delete`], [`Ads::set_statuses`], and every create, update, delete and
-//! duplicate on campaigns, ad sets and network ads. A boost, ad or new campaign
-//! object starts paused unless `paused` is set to `false`.
+//! duplicate on campaigns, ad sets and network ads, plus the three comment
+//! writes. A boost, ad or new campaign object starts paused unless `paused` is
+//! set to `false`.
 
 use reqwest::Method;
 
 use crate::error::Result;
 use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
-    Ad, AdAccountTree, AdAudience, AdAudiences, AdCampaign, AdCompany, AdConnection, AdCreatives,
-    AdForecast, AdInsightsQuery, AdLibraryPage, AdLibraryQuery, AdObjectQuery, AdProvider, AdSet,
-    AdSource, AdStatus, AdStatusResult, ArchiveLeadForm, AudienceCreated, AudiencesQuery,
-    AuthorizeMetaAds, BidPricing, BoostPost, BoostablePost, ConversionEvent, ConversionMetrics,
-    ConversionRule, CreateAd, CreateAdSet, CreateAudience, CreateCampaign, CreateConversionRule,
-    CreateCreative, CreateLeadForm, CreateNetworkAd, Creative, CreativesQuery, EstimateReach,
-    ExternalAd, InsightsQuery, InsightsReport, LeadFormDetail, LeadFormQuery, LeadFormSource,
-    LeadPage, LeadPageSubscribed, LeadsFeedPage, LeadsFeedQuery, LeadsPage, LeadsQuery, Message,
-    NetworkAd, ReachEstimate, SetAdStatus, SetAdStatuses, SubscribeLeadPage, SupplyForecast,
-    TargetingOption, TargetingSearch, UpdateAdSet, UpdateAudience, UpdateCampaign,
-    UpdateConversionRule, UpdateNetworkAd,
+    Ad, AdAccountQuery, AdAccountTree, AdActivityLog, AdActivityQuery, AdAudience, AdAudiences,
+    AdBusinessCenter, AdCampaign, AdCommentReply, AdCommentWrite, AdCommentsPage, AdCommentsQuery,
+    AdCompany, AdConnection, AdCreatives, AdForecast, AdIdentity, AdInsightsQuery, AdLabel,
+    AdLabelInput, AdLibraryPage, AdLibraryQuery, AdObjectQuery, AdProvider, AdSet, AdSource,
+    AdStatus, AdStatusResult, AdStudy, ApplyAdLabel, ArchiveLeadForm, AudienceCreated,
+    AudiencesQuery, AuthorizeGoogleAds, AuthorizeMetaAds, BidPricing, BoostPost, BoostablePost,
+    CatalogBatchResult, CatalogProducts, CatalogProductsQuery, ConversionApiEvent,
+    ConversionMetrics, ConversionRule, ConversionsAccepted, CreateAd, CreateAdSet, CreateAdStudy,
+    CreateAudience, CreateCampaign, CreateCatalog, CreateConversionRule, CreateCreative,
+    CreateHighDemandPeriod, CreateLeadForm, CreateNetworkAd, CreateProductFeed,
+    CreateReachFrequency, CreateValueRuleSet, Creative, CreativesQuery, EstimateReach, ExternalAd,
+    HighDemandPeriod, InsightsQuery, InsightsReport, IosCampaignLimits, LeadFormDetail,
+    LeadFormQuery, LeadFormSource, LeadPage, LeadPageSubscribed, LeadsFeedPage, LeadsFeedQuery,
+    LeadsPage, LeadsQuery, Message, NetworkAd, PartnershipCreator, PartnershipQuery,
+    ProductCatalog, ProductCatalogs, ProductFeed, ProductFeedUpload, ProductSet, ProductSetInput,
+    ReachEstimate, ReachFrequencyAction, ReachFrequencyPrediction, ReachFrequencyPredictions,
+    RequestPartnership, SetAdStatus, SetAdStatuses, SparkPost, SparkPostsQuery, StartFeedUpload,
+    SubscribeLeadPage, SupplyForecast, TargetingOption, TargetingSearch, UpdateAdSet,
+    UpdateAudience, UpdateCampaign, UpdateCatalog, UpdateConversionRule, UpdateNetworkAd,
+    UploadConversions, ValueRuleSet, WriteCatalogProducts,
 };
 
 /// Ads.
@@ -45,6 +57,20 @@ fn object_query(params: &AdObjectQuery) -> Query {
 
 fn conversion_rule_path(id: &str, suffix: &str) -> String {
     format!("/ads/linkedin/conversion-rules/{id}{suffix}")
+}
+
+fn account_query(params: &AdAccountQuery) -> Query {
+    let mut query = workspace_query(params.workspace_id.as_deref());
+    query.push(("connection_id", params.connection_id.clone()));
+    query.push(("ad_account_id", params.ad_account_id.clone()));
+    query
+}
+
+fn partnership_query(params: &PartnershipQuery) -> Query {
+    let mut query = workspace_query(params.workspace_id.as_deref());
+    query.push(("connection_id", params.connection_id.clone()));
+    query.push(("page_id", params.page_id.clone()));
+    query
 }
 
 #[derive(serde::Deserialize)]
@@ -159,6 +185,26 @@ impl Ads<'_> {
         self.authorize("meta", input).await
     }
 
+    /// The Google login URL. The caller finishes it in their own browser
+    /// session: the callback checks that the same user came back.
+    pub async fn authorize_google(&self, input: &AuthorizeGoogleAds) -> Result<String> {
+        #[derive(serde::Deserialize)]
+        struct Authorized {
+            #[serde(default)]
+            url: String,
+        }
+        let body: Envelope<Authorized> = self
+            .http
+            .send(
+                Method::POST,
+                "/ads/connections/google/authorize",
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(body.data.url)
+    }
+
     /// Remove a connection. Also deletes every ad record created through it.
     pub async fn delete_connection(&self, id: &str, workspace_id: &str) -> Result<Message> {
         self.http
@@ -193,6 +239,119 @@ impl Ads<'_> {
             .send(Method::POST, "/ads", None, Some(input))
             .await?;
         Ok(body.data)
+    }
+
+    /// TikTok's Business Centers. The one network-named read here, because no
+    /// other network groups ad accounts this way.
+    pub async fn tiktok_business_centers(
+        &self,
+        params: &AdObjectQuery,
+    ) -> Result<Vec<AdBusinessCenter>> {
+        let body: Envelope<Vec<AdBusinessCenter>> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                "/ads/tiktok/business-centers",
+                Some(object_query(params)),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// The accounts an ad can run as; an identity id is a `page_id`.
+    pub async fn tiktok_identities(&self, params: &AudiencesQuery) -> Result<Vec<AdIdentity>> {
+        let mut query: Query = workspace_query(params.workspace_id.as_deref());
+        query.push(("connection_id", params.connection_id.clone()));
+        query.push(("ad_account_id", params.ad_account_id.clone()));
+        let body: Envelope<Vec<AdIdentity>> = self
+            .http
+            .send::<_, ()>(Method::GET, "/ads/tiktok/identities", Some(query), None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Posts already live under an identity, each a candidate Spark ad.
+    pub async fn spark_posts(&self, params: &SparkPostsQuery) -> Result<Vec<SparkPost>> {
+        let mut query: Query = workspace_query(params.workspace_id.as_deref());
+        query.push(("connection_id", params.connection_id.clone()));
+        query.push(("ad_account_id", params.ad_account_id.clone()));
+        query.push(("identity_id", params.identity_id.clone()));
+        let body: Envelope<Vec<SparkPost>> = self
+            .http
+            .send::<_, ()>(Method::GET, "/ads/spark-posts", Some(query), None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Offline conversions against a pixel the ad account owns. Identifiers are
+    /// hashed before anything leaves FoPost.
+    pub async fn upload_conversions(&self, input: &UploadConversions) -> Result<i64> {
+        let body: Envelope<ConversionsAccepted> = self
+            .http
+            .send(Method::POST, "/ads/conversions", None, Some(input))
+            .await?;
+        Ok(body.data.accepted)
+    }
+
+    /// One page of an ad's comments; pass `next_cursor` back as `after`.
+    pub async fn comments(&self, params: &AdCommentsQuery) -> Result<AdCommentsPage> {
+        let mut query: Query = workspace_query(params.workspace_id.as_deref());
+        query.push(("connection_id", params.connection_id.clone()));
+        query.push(("ad_id", params.ad_id.clone()));
+        push_opt(&mut query, "after", params.after.as_ref());
+        let body: Envelope<AdCommentsPage> = self
+            .http
+            .send::<_, ()>(Method::GET, "/ads/comments", Some(query), None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Answer a comment on an ad. Needs `publish` as well as `ads`.
+    pub async fn reply_to_comment(
+        &self,
+        comment_id: &str,
+        input: &AdCommentWrite,
+    ) -> Result<String> {
+        let body: Envelope<AdCommentReply> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/ads/comments/{comment_id}/reply"),
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(body.data.reply_id)
+    }
+
+    /// Hide or show a comment on an ad. Needs `publish` as well as `ads`.
+    pub async fn set_comment_hidden(&self, comment_id: &str, input: &AdCommentWrite) -> Result<()> {
+        let _: Envelope<Message> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/ads/comments/{comment_id}/hide"),
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Remove a comment from the ad on the network. One already gone succeeds.
+    /// Needs `publish` as well as `ads`.
+    pub async fn delete_comment(&self, comment_id: &str, input: &AdCommentWrite) -> Result<()> {
+        let _: Envelope<Message> = self
+            .http
+            .send(
+                Method::DELETE,
+                &format!("/ads/comments/{comment_id}"),
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(())
     }
 
     /// Read the delivery status and lifetime insights from Meta.
@@ -314,6 +473,452 @@ impl Ads<'_> {
             )
             .await?;
         Ok(body.data)
+    }
+
+    // ─── Goals ──────────────────────────────────────────────────────
+
+    /// The goals this connection's network can run right now. Ask rather than
+    /// assume: a goal the deployment is not set up for is absent here and is
+    /// refused if you send it anyway.
+    pub async fn goals(&self, params: &AdObjectQuery) -> Result<Vec<String>> {
+        self.get("/ads/goals", object_query(params)).await
+    }
+
+    // ─── Product catalogs ───────────────────────────────────────────
+
+    /// Catalogs the connection's business portfolios reach. Read live, never stored.
+    pub async fn catalogs(&self, params: &AdObjectQuery) -> Result<ProductCatalogs> {
+        self.get("/ads/catalogs", object_query(params)).await
+    }
+
+    /// Created on the connection's business portfolio. Also needs `publish`.
+    pub async fn create_catalog(&self, input: &CreateCatalog) -> Result<ProductCatalog> {
+        self.post_json("/ads/catalogs", input).await
+    }
+
+    /// Reads one catalog.
+    pub async fn catalog(&self, id: &str, params: &AdObjectQuery) -> Result<ProductCatalog> {
+        self.get(&format!("/ads/catalogs/{id}"), object_query(params))
+            .await
+    }
+
+    /// Also needs `publish`.
+    pub async fn update_catalog(
+        &self,
+        id: &str,
+        params: &AdObjectQuery,
+        input: &UpdateCatalog,
+    ) -> Result<ProductCatalog> {
+        self.change(&format!("/ads/catalogs/{id}"), params, input)
+            .await
+    }
+
+    /// Deletes every product, feed and set in it. Also needs `publish`.
+    pub async fn delete_catalog(&self, id: &str, params: &AdObjectQuery) -> Result<Message> {
+        self.remove(&format!("/ads/catalogs/{id}"), params).await
+    }
+
+    /// One page of products; pass `next_cursor` back as `after`.
+    pub async fn catalog_products(
+        &self,
+        id: &str,
+        params: &CatalogProductsQuery,
+    ) -> Result<CatalogProducts> {
+        let mut query = workspace_query(params.workspace_id.as_deref());
+        query.push(("connection_id", params.connection_id.clone()));
+        push_opt(&mut query, "after", params.after.as_deref());
+        self.get(&format!("/ads/catalogs/{id}/products"), query)
+            .await
+    }
+
+    /// Up to 500 upserts and deletes in one batch, keyed by your own retailer
+    /// id. Also needs `publish`.
+    pub async fn write_catalog_products(
+        &self,
+        id: &str,
+        input: &WriteCatalogProducts,
+    ) -> Result<CatalogBatchResult> {
+        self.post_json(&format!("/ads/catalogs/{id}/products"), input)
+            .await
+    }
+
+    /// The feeds keeping a catalog in step with a hosted product file.
+    pub async fn product_feeds(
+        &self,
+        id: &str,
+        params: &AdObjectQuery,
+    ) -> Result<Vec<ProductFeed>> {
+        self.get(&format!("/ads/catalogs/{id}/feeds"), object_query(params))
+            .await
+    }
+
+    /// Also needs `publish`.
+    pub async fn create_product_feed(
+        &self,
+        id: &str,
+        input: &CreateProductFeed,
+    ) -> Result<ProductFeed> {
+        self.post_json(&format!("/ads/catalogs/{id}/feeds"), input)
+            .await
+    }
+
+    /// Also needs `publish`.
+    pub async fn delete_product_feed(
+        &self,
+        id: &str,
+        feed_id: &str,
+        params: &AdObjectQuery,
+    ) -> Result<Message> {
+        self.remove(&format!("/ads/catalogs/{id}/feeds/{feed_id}"), params)
+            .await
+    }
+
+    /// Each run the network made of the feed.
+    pub async fn feed_uploads(
+        &self,
+        id: &str,
+        feed_id: &str,
+        params: &AdObjectQuery,
+    ) -> Result<Vec<ProductFeedUpload>> {
+        self.get(
+            &format!("/ads/catalogs/{id}/feeds/{feed_id}/uploads"),
+            object_query(params),
+        )
+        .await
+    }
+
+    /// Fetches the feed now; the id of the run. Also needs `publish`.
+    pub async fn start_feed_upload(
+        &self,
+        id: &str,
+        feed_id: &str,
+        input: &StartFeedUpload,
+    ) -> Result<String> {
+        let body: Envelope<Duplicated> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/ads/catalogs/{id}/feeds/{feed_id}/uploads"),
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(body.data.id)
+    }
+
+    /// A catalog ad runs from a product set, not the whole catalog.
+    pub async fn product_sets(&self, id: &str, params: &AdObjectQuery) -> Result<Vec<ProductSet>> {
+        self.get(
+            &format!("/ads/catalogs/{id}/product-sets"),
+            object_query(params),
+        )
+        .await
+    }
+
+    /// Without a `filter` the set is the whole catalog. Also needs `publish`.
+    pub async fn create_product_set(
+        &self,
+        id: &str,
+        input: &ProductSetInput,
+    ) -> Result<ProductSet> {
+        self.post_json(&format!("/ads/catalogs/{id}/product-sets"), input)
+            .await
+    }
+
+    /// Also needs `publish`.
+    pub async fn update_product_set(
+        &self,
+        id: &str,
+        set_id: &str,
+        params: &AdObjectQuery,
+        input: &ProductSetInput,
+    ) -> Result<ProductSet> {
+        self.change(
+            &format!("/ads/catalogs/{id}/product-sets/{set_id}"),
+            params,
+            input,
+        )
+        .await
+    }
+
+    /// Also needs `publish`.
+    pub async fn delete_product_set(
+        &self,
+        id: &str,
+        set_id: &str,
+        params: &AdObjectQuery,
+    ) -> Result<Message> {
+        self.remove(&format!("/ads/catalogs/{id}/product-sets/{set_id}"), params)
+            .await
+    }
+
+    // ─── Reach and frequency ────────────────────────────────────────
+
+    /// The reach-and-frequency predictions on one ad account.
+    pub async fn reach_frequency(
+        &self,
+        params: &AdAccountQuery,
+    ) -> Result<ReachFrequencyPredictions> {
+        self.get("/ads/reach-frequency", account_query(params))
+            .await
+    }
+
+    /// Prices a flight. Nothing is bought until you reserve it.
+    pub async fn create_reach_frequency(
+        &self,
+        input: &CreateReachFrequency,
+    ) -> Result<ReachFrequencyPrediction> {
+        self.post_json("/ads/reach-frequency", input).await
+    }
+
+    /// Reads one prediction.
+    pub async fn reach_frequency_prediction(
+        &self,
+        id: &str,
+        params: &AdAccountQuery,
+    ) -> Result<ReachFrequencyPrediction> {
+        self.get(&format!("/ads/reach-frequency/{id}"), account_query(params))
+            .await
+    }
+
+    /// Holds the inventory the prediction priced. Also needs `publish`.
+    pub async fn reserve_reach_frequency(
+        &self,
+        id: &str,
+        input: &ReachFrequencyAction,
+    ) -> Result<ReachFrequencyPrediction> {
+        self.post_json(&format!("/ads/reach-frequency/{id}/reserve"), input)
+            .await
+    }
+
+    /// Also needs `publish`.
+    pub async fn cancel_reach_frequency(
+        &self,
+        id: &str,
+        input: &ReachFrequencyAction,
+    ) -> Result<ReachFrequencyPrediction> {
+        self.post_json(&format!("/ads/reach-frequency/{id}/cancel"), input)
+            .await
+    }
+
+    // ─── Ad Library ─────────────────────────────────────────────────
+
+    /// The public ad archive: ads anyone is running, by keyword or by Page.
+    /// Read live on every call and stored nowhere, so an ad that stops running
+    /// is simply absent from the next search.
+    pub async fn library(&self, params: &AdLibraryQuery) -> Result<AdLibraryPage> {
+        let mut query = workspace_query(params.workspace_id.as_deref());
+        query.push(("connection_id", params.connection_id.clone()));
+        query.push(("countries", params.countries.join(",")));
+        push_opt(&mut query, "q", params.q.as_deref());
+        if !params.page_ids.is_empty() {
+            query.push(("page_ids", params.page_ids.join(",")));
+        }
+        push_opt(&mut query, "active_status", params.active_status.as_deref());
+        if let Some(limit) = params.limit {
+            query.push(("limit", limit.to_string()));
+        }
+        push_opt(&mut query, "after", params.after.as_deref());
+        self.get("/ads/library", query).await
+    }
+
+    // ─── Partnership ads ────────────────────────────────────────────
+
+    /// Creators who allowlisted this Page to run partnership ads on their posts.
+    pub async fn partnership_creators(
+        &self,
+        params: &PartnershipQuery,
+    ) -> Result<Vec<PartnershipCreator>> {
+        self.get("/ads/partnership/creators", partnership_query(params))
+            .await
+    }
+
+    /// Asks a creator for permission; the list as it now stands.
+    pub async fn request_partnership(
+        &self,
+        input: &RequestPartnership,
+    ) -> Result<Vec<PartnershipCreator>> {
+        self.post_json("/ads/partnership/creators", input).await
+    }
+
+    /// Revokes a creator's partnership permission.
+    pub async fn revoke_partnership(
+        &self,
+        creator_id: &str,
+        params: &PartnershipQuery,
+    ) -> Result<Message> {
+        self.http
+            .send::<Message, ()>(
+                Method::DELETE,
+                &format!("/ads/partnership/creators/{creator_id}"),
+                Some(partnership_query(params)),
+                None,
+            )
+            .await
+    }
+
+    // ─── Ad account settings ────────────────────────────────────────
+
+    /// Who changed what on the ad account, and when.
+    pub async fn account_activity(&self, params: &AdActivityQuery) -> Result<AdActivityLog> {
+        let mut query = workspace_query(params.workspace_id.as_deref());
+        query.push(("connection_id", params.connection_id.clone()));
+        query.push(("ad_account_id", params.ad_account_id.clone()));
+        push_opt(&mut query, "since", params.since.as_deref());
+        push_opt(&mut query, "until", params.until.as_deref());
+        self.get("/ads/account/activity", query).await
+    }
+
+    /// The labels on an ad account.
+    pub async fn labels(&self, params: &AdAccountQuery) -> Result<Vec<AdLabel>> {
+        self.get("/ads/account/labels", account_query(params)).await
+    }
+
+    /// Creates a label.
+    pub async fn create_label(&self, input: &AdLabelInput) -> Result<AdLabel> {
+        self.post_json("/ads/account/labels", input).await
+    }
+
+    /// Renames a label.
+    pub async fn update_label(
+        &self,
+        id: &str,
+        params: &AdObjectQuery,
+        input: &AdLabelInput,
+    ) -> Result<AdLabel> {
+        self.change(&format!("/ads/account/labels/{id}"), params, input)
+            .await
+    }
+
+    /// Deletes a label.
+    pub async fn delete_label(&self, id: &str, params: &AdAccountQuery) -> Result<Message> {
+        self.remove_account(&format!("/ads/account/labels/{id}"), params)
+            .await
+    }
+
+    /// Keeps whatever labels the object already carries.
+    pub async fn apply_label(&self, id: &str, input: &ApplyAdLabel) -> Result<Message> {
+        self.http
+            .send(
+                Method::POST,
+                &format!("/ads/account/labels/{id}/apply"),
+                None,
+                Some(input),
+            )
+            .await
+    }
+
+    /// The A/B studies on an ad account.
+    pub async fn studies(&self, params: &AdAccountQuery) -> Result<Vec<AdStudy>> {
+        self.get("/ads/account/studies", account_query(params))
+            .await
+    }
+
+    /// Splits traffic evenly across the cells for the length of the flight.
+    pub async fn create_study(&self, input: &CreateAdStudy) -> Result<AdStudy> {
+        self.post_json("/ads/account/studies", input).await
+    }
+
+    /// Reads one A/B study.
+    pub async fn study(&self, id: &str, params: &AdAccountQuery) -> Result<AdStudy> {
+        self.get(&format!("/ads/account/studies/{id}"), account_query(params))
+            .await
+    }
+
+    /// Deletes an A/B study.
+    pub async fn delete_study(&self, id: &str, params: &AdAccountQuery) -> Result<Message> {
+        self.remove_account(&format!("/ads/account/studies/{id}"), params)
+            .await
+    }
+
+    /// How many iOS 14 campaigns the account may run at once, per app.
+    pub async fn ios_campaign_limits(
+        &self,
+        params: &AdAccountQuery,
+    ) -> Result<Vec<IosCampaignLimits>> {
+        self.get("/ads/account/ios-limits", account_query(params))
+            .await
+    }
+
+    /// The high-demand windows declared on an ad account.
+    pub async fn high_demand_periods(
+        &self,
+        params: &AdAccountQuery,
+    ) -> Result<Vec<HighDemandPeriod>> {
+        self.get("/ads/account/high-demand-periods", account_query(params))
+            .await
+    }
+
+    /// Tells the network to expect heavier spend over a window, so pacing
+    /// allows for it.
+    pub async fn create_high_demand_period(
+        &self,
+        input: &CreateHighDemandPeriod,
+    ) -> Result<HighDemandPeriod> {
+        self.post_json("/ads/account/high-demand-periods", input)
+            .await
+    }
+
+    /// Deletes a high-demand window.
+    pub async fn delete_high_demand_period(
+        &self,
+        id: &str,
+        params: &AdAccountQuery,
+    ) -> Result<Message> {
+        self.remove_account(&format!("/ads/account/high-demand-periods/{id}"), params)
+            .await
+    }
+
+    /// The value rule sets on an ad account.
+    pub async fn value_rule_sets(&self, params: &AdAccountQuery) -> Result<Vec<ValueRuleSet>> {
+        self.get("/ads/account/value-rule-sets", account_query(params))
+            .await
+    }
+
+    /// Weights conversions so some audiences count for more than others.
+    pub async fn create_value_rule_set(&self, input: &CreateValueRuleSet) -> Result<ValueRuleSet> {
+        self.post_json("/ads/account/value-rule-sets", input).await
+    }
+
+    /// Deletes a value rule set.
+    pub async fn delete_value_rule_set(
+        &self,
+        id: &str,
+        params: &AdAccountQuery,
+    ) -> Result<Message> {
+        self.remove_account(&format!("/ads/account/value-rule-sets/{id}"), params)
+            .await
+    }
+
+    async fn post_json<T: serde::de::DeserializeOwned, B: serde::Serialize>(
+        &self,
+        path: &str,
+        input: &B,
+    ) -> Result<T> {
+        let body: Envelope<T> = self
+            .http
+            .send(Method::POST, path, None, Some(input))
+            .await?;
+        Ok(body.data)
+    }
+
+    async fn change<T: serde::de::DeserializeOwned, B: serde::Serialize>(
+        &self,
+        path: &str,
+        params: &AdObjectQuery,
+        input: &B,
+    ) -> Result<T> {
+        let body: Envelope<T> = self
+            .http
+            .send(Method::PATCH, path, Some(object_query(params)), Some(input))
+            .await?;
+        Ok(body.data)
+    }
+
+    async fn remove_account(&self, path: &str, params: &AdAccountQuery) -> Result<Message> {
+        self.http
+            .send::<Message, ()>(Method::DELETE, path, Some(account_query(params)), None)
+            .await
     }
 
     async fn get<T: serde::de::DeserializeOwned>(&self, path: &str, query: Query) -> Result<T> {
@@ -814,7 +1419,7 @@ impl Ads<'_> {
         &self,
         id: &str,
         params: &AdObjectQuery,
-        events: &[ConversionEvent],
+        events: &[ConversionApiEvent],
     ) -> Result<u64> {
         #[derive(serde::Deserialize)]
         struct Accepted {
@@ -831,25 +1436,6 @@ impl Ads<'_> {
             )
             .await?;
         Ok(body.data.accepted)
-    }
-
-    /// The network's own public ad library, not the connection's ads.
-    pub async fn ad_library(&self, params: &AdLibraryQuery) -> Result<AdLibraryPage> {
-        let mut query = workspace_query(params.workspace_id.as_deref());
-        query.push(("connection_id", params.connection_id.clone()));
-        push_opt(&mut query, "keyword", params.keyword.as_deref());
-        push_opt(&mut query, "advertiser", params.advertiser.as_deref());
-        if !params.countries.is_empty() {
-            query.push(("countries", params.countries.join(",")));
-        }
-        push_opt(&mut query, "since", params.since.as_deref());
-        push_opt(&mut query, "until", params.until.as_deref());
-        push_opt(&mut query, "cursor", params.cursor.as_deref());
-        let body: Envelope<AdLibraryPage> = self
-            .http
-            .send::<_, ()>(Method::GET, "/ads/ad-library", Some(query), None)
-            .await?;
-        Ok(body.data)
     }
 
     /// How many people a targeting reaches.
