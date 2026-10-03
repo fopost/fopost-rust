@@ -602,3 +602,77 @@ pub struct GoogleQueryResult {
     #[serde(default)]
     pub rows: Vec<serde_json::Value>,
 }
+
+/// What Google projects applying a recommendation would change. A `None` field
+/// is one Google does not estimate for that recommendation.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoogleRecommendationImpact {
+    #[serde(default)]
+    pub base_clicks: Option<f64>,
+    #[serde(default)]
+    pub potential_clicks: Option<f64>,
+    /// The account's currency, in minor units.
+    #[serde(default)]
+    pub base_cost_minor: Option<i64>,
+    #[serde(default)]
+    pub potential_cost_minor: Option<i64>,
+    #[serde(default)]
+    pub base_conversions: Option<f64>,
+    #[serde(default)]
+    pub potential_conversions: Option<f64>,
+}
+
+/// One of Google's own recommendations for the account.
+///
+/// `id` is the Google resource name rather than the `~` form other objects use,
+/// because a recommendation is not an object you address again: it is what
+/// apply and dismiss take.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoogleRecommendation {
+    pub id: String,
+    #[serde(default, rename = "type")]
+    pub kind: String,
+    #[serde(default)]
+    pub campaign_id: Option<String>,
+    #[serde(default)]
+    pub ad_group_id: Option<String>,
+    #[serde(default)]
+    pub dismissed: bool,
+    #[serde(default)]
+    pub impact: Option<GoogleRecommendationImpact>,
+}
+
+/// One campaign's optimization score.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoogleOptimizationScoreCampaign {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub score: Option<f64>,
+}
+
+/// Google's estimate of how well the account is set up, from 0 to 1.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoogleOptimizationScore {
+    #[serde(default)]
+    pub score: Option<f64>,
+    /// How much this account's score counts against others under the same manager.
+    #[serde(default)]
+    pub weight: Option<f64>,
+    #[serde(default)]
+    pub campaigns: Vec<GoogleOptimizationScoreCampaign>,
+}
+
+/// The body of apply and dismiss.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoogleRecommendations {
+    #[serde(flatten)]
+    pub scope: GoogleScope,
+    pub ids: Vec<String>,
+}
