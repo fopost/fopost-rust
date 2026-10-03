@@ -1,4 +1,4 @@
-//! Inbox — comments, mentions and direct messages on connected accounts.
+//! Inbox — comments, mentions, reviews and direct messages on connected accounts.
 
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +10,9 @@ string_enum! {
         Comment => "comment",
         Mention => "mention",
         Dm => "dm",
+        /// A rating left on the business itself: a Google Business review or a
+        /// Facebook Page recommendation.
+        Review => "review",
     }
 }
 
@@ -47,6 +50,8 @@ string_enum! {
         Comments => "comments",
         /// Posts our accounts were tagged in.
         Mentions => "mentions",
+        /// Reviews left on the business, one row each.
+        Reviews => "reviews",
     }
 }
 
@@ -131,7 +136,7 @@ pub struct InboxPostContext {
     pub published: Option<PublishedPostRef>,
 }
 
-/// One comment, mention or DM.
+/// One comment, mention, review or DM.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InboxItem {
@@ -154,6 +159,9 @@ pub struct InboxItem {
     pub author_avatar_url: Option<String>,
     #[serde(default)]
     pub text: Option<String>,
+    /// Stars on a review, 1-5. `None` on every other type.
+    #[serde(default)]
+    pub rating: Option<u8>,
     #[serde(default)]
     pub attachments: Vec<InboxAttachment>,
     #[serde(default)]
@@ -205,6 +213,10 @@ pub struct InboxItem {
     /// A DM can be opened with `start_conversation` and a `comment_id`.
     #[serde(default)]
     pub can_private_reply: bool,
+    /// The platform's own state for a comment: `published`, `held`, `spam` or
+    /// `rejected`. `None` where the platform does not report one.
+    #[serde(default)]
+    pub moderation_status: Option<String>,
     /// The FoPost post this sits under, when there is one.
     #[serde(default)]
     pub post: Option<PublishedPostRef>,
@@ -233,6 +245,9 @@ pub struct InboxThread {
     pub last_comment_text: Option<String>,
     #[serde(default)]
     pub last_comment_author: Option<String>,
+    /// Stars, on a review thread. `None` on comments and mentions.
+    #[serde(default)]
+    pub rating: Option<u8>,
     #[serde(default)]
     pub post: Option<InboxPostContext>,
     #[serde(default)]
@@ -300,6 +315,10 @@ pub struct InboxAccount {
     /// A new DM can be opened from this account by handle.
     #[serde(default)]
     pub can_start_conversation: bool,
+    /// The grant predates a permission the inbox read needs; the account is not
+    /// polled until someone reconnects it.
+    #[serde(default)]
+    pub reconnect_required: bool,
 }
 
 /// What the inbox can read on a platform. Not tenant data.
@@ -853,4 +872,15 @@ pub struct InboxRefreshResult {
     pub rate_limited: u64,
     #[serde(default)]
     pub dm_reconnect: Vec<InboxDmReconnect>,
+}
+
+/// The outcome of a Messenger thread hand-over.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct InboxHandover {
+    /// The app control went to, or `None` when it was taken back.
+    #[serde(default)]
+    pub app_id: Option<String>,
+    /// `passed` or `taken`.
+    #[serde(default)]
+    pub control: String,
 }
