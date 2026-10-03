@@ -18,9 +18,10 @@ use crate::models::{
     CreateGoogleConversionAction, CreateGoogleKeyword, CreateGoogleNegativeKeywordList,
     GoogleAdScheduleSlot, GoogleAssetGroup, GoogleAssets, GoogleBidStrategy,
     GoogleConversionAction, GoogleDateRange, GoogleKeyword, GoogleKeywordIdea, GoogleKeywordIdeas,
-    GoogleKeywordMetrics, GoogleLocalServicesLead, GoogleQuery, GoogleQueryResult, GoogleScope,
-    GoogleSearchTerm, GoogleSharedSet, Message, SetGoogleAdSchedule, UpdateGoogleAssetGroup,
-    UpdateGoogleKeyword, UploadGoogleConversionAdjustments, UploadGoogleConversions,
+    GoogleKeywordMetrics, GoogleLocalServicesLead, GoogleOptimizationScore, GoogleQuery,
+    GoogleQueryResult, GoogleRecommendation, GoogleRecommendations, GoogleScope, GoogleSearchTerm,
+    GoogleSharedSet, Message, SetGoogleAdSchedule, UpdateGoogleAssetGroup, UpdateGoogleKeyword,
+    UploadGoogleConversionAdjustments, UploadGoogleConversions,
 };
 
 /// Google Ads.
@@ -35,6 +36,18 @@ fn scope_query(scope: &GoogleScope) -> Query {
     query.push(("connection_id", scope.connection_id.clone()));
     query.push(("customer_id", scope.customer_id.clone()));
     query
+}
+
+#[derive(serde::Deserialize)]
+struct Applied {
+    #[serde(default)]
+    applied: i64,
+}
+
+#[derive(serde::Deserialize)]
+struct Dismissed {
+    #[serde(default)]
+    dismissed: i64,
 }
 
 #[derive(serde::Deserialize)]
@@ -404,6 +417,74 @@ impl GoogleAds<'_> {
     ) -> Result<i64> {
         self.uploaded("/ads/google/conversions/adjustments", input)
             .await
+    }
+
+    // ── Recommendations ──
+
+    /// Google's own read on what the account should change next. `types`
+    /// narrows to those recommendation types.
+    pub async fn recommendations(
+        &self,
+        scope: &GoogleScope,
+        types: &[&str],
+    ) -> Result<Vec<GoogleRecommendation>> {
+        let mut query = scope_query(scope);
+        if !types.is_empty() {
+            query.push(("types", types.join(",")));
+        }
+        let body: Envelope<Vec<GoogleRecommendation>> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                "/ads/google/recommendations",
+                Some(query),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// The account's score and weight, and the score of each live campaign.
+    pub async fn optimization_score(&self, scope: &GoogleScope) -> Result<GoogleOptimizationScore> {
+        let body: Envelope<GoogleOptimizationScore> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                "/ads/google/optimization-score",
+                Some(scope_query(scope)),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Apply each one, which changes what the live account serves or bids;
+    /// answers how many landed. Needs `publish` as well as `ads`.
+    pub async fn apply_recommendations(&self, input: &GoogleRecommendations) -> Result<i64> {
+        let body: Envelope<Applied> = self
+            .http
+            .send(
+                Method::POST,
+                "/ads/google/recommendations/apply",
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(body.data.applied)
+    }
+
+    /// Hide each one so Google stops surfacing it. Needs `publish`.
+    pub async fn dismiss_recommendations(&self, input: &GoogleRecommendations) -> Result<i64> {
+        let body: Envelope<Dismissed> = self
+            .http
+            .send(
+                Method::POST,
+                "/ads/google/recommendations/dismiss",
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(body.data.dismissed)
     }
 
     // ── GAQL ──

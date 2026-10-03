@@ -12,13 +12,14 @@ use fopost::models::{
     ConversationSort, CreateAccountGroup, CreateAudience, CreateAutomation, CreateBroadcast,
     CreateContact, CreateContactField, CreateGoogleKeyword, CreatePinterestBoard, CreateSequence,
     CreateWebhook, DiscordEventInput, DiscordRoleInput, Enroll, GoogleAdScheduleInput,
-    GoogleDayOfWeek, GoogleMatchType, GoogleQuery, GoogleScope, ImportContacts, InboxItemState,
-    InboxItemType, InboxReply, InboxSort, InsightsBreakdown, InsightsQuery, LeadsFeedQuery,
-    LeadsQuery, ListAccounts, ListBroadcasts, ListContacts, ListInbox, ListRecipients,
-    MarkThreadRead, Platform, RecipientStatus, SequenceStep, SetAdStatuses, SetGoogleAdSchedule,
-    SignalLevel, SkipReason, StartInboxConversation, TelegramBotCommand, TriggerType,
-    UpdateContact, UpdateDiscordIdentity, UpdateInboxItem, UpdateSlackIdentity, ValidateLength,
-    ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
+    GoogleDayOfWeek, GoogleMatchType, GoogleQuery, GoogleRecommendations, GoogleScope,
+    ImportContacts, InboxItemState, InboxItemType, InboxReply, InboxSort, InsightsBreakdown,
+    InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts, ListBroadcasts, ListContacts,
+    ListInbox, ListRecipients, MarkThreadRead, Platform, RecipientStatus, SequenceStep,
+    SetAdStatuses, SetGoogleAdSchedule, SignalLevel, SkipReason, StartInboxConversation,
+    TelegramBotCommand, TriggerType, UpdateContact, UpdateDiscordIdentity, UpdateInboxItem,
+    UpdateSlackIdentity, ValidateLength, ValidateMedia, ValidateMediaItem, ValidatePost,
+    WebhookEvent,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -2693,4 +2694,67 @@ async fn accounts_platform_metrics_surfaces_a_pending_grant() {
 
     assert_eq!(err.status(), Some(503));
     assert_eq!(err.code(), Some("platform_metrics_unavailable"));
+}
+
+#[tokio::test]
+async fn google_recommendations_join_the_types_filter() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/ads/google/recommendations"))
+        .and(query_param("types", "KEYWORD,TARGET_CPA_OPT_IN"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{
+                "id": "customers/1234567890/recommendations/ABC~1",
+                "type": "KEYWORD",
+                "campaignId": "1234567890~campaign~55",
+                "dismissed": false,
+                "impact": { "baseClicks": 10.0, "potentialClicks": 25.0 }
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let scope = GoogleScope::new("conn_1", "1234567890");
+    let rows = client
+        .google_ads()
+        .recommendations(&scope, &["KEYWORD", "TARGET_CPA_OPT_IN"])
+        .await
+        .expect("recommendations");
+
+    assert_eq!(rows[0].kind, "KEYWORD");
+    assert_eq!(
+        rows[0].impact.as_ref().and_then(|i| i.potential_clicks),
+        Some(25.0)
+    );
+}
+
+#[tokio::test]
+async fn google_apply_recommendations_sends_the_ids() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/ads/google/recommendations/apply"))
+        .and(body_json(serde_json::json!({
+            "workspaceId": "ws_1",
+            "connectionId": "conn_1",
+            "customerId": "1234567890",
+            "ids": ["customers/1234567890/recommendations/ABC~1"]
+        })))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": {"applied": 1}})),
+        )
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let applied = client
+        .google_ads()
+        .apply_recommendations(&GoogleRecommendations {
+            scope: GoogleScope::new("conn_1", "1234567890").in_workspace("ws_1"),
+            ids: vec!["customers/1234567890/recommendations/ABC~1".into()],
+        })
+        .await
+        .expect("apply");
+
+    assert_eq!(applied, 1);
 }
