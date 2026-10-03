@@ -1,12 +1,14 @@
 //! `client.ads()` — boosts, standalone ads, the campaign tree, creatives,
-//! catalogs, audiences, predictions, the public ad archive, insights and lead
-//! forms on a Meta Ads connection.
+//! catalogs, audiences, predictions, the public ad archive, insights, lead
+//! forms and ad comments. The connection decides which network a call reaches,
+//! so the same methods run Meta, Google and TikTok.
 //!
 //! Every call needs the `ads` scope. The calls that spend money also need
 //! `publish`: [`Ads::boost`], [`Ads::create`], [`Ads::set_status`],
 //! [`Ads::delete`], [`Ads::set_statuses`], and every create, update, delete and
-//! duplicate on campaigns, ad sets and network ads. A boost, ad or new campaign
-//! object starts paused unless `paused` is set to `false`.
+//! duplicate on campaigns, ad sets and network ads, plus the three comment
+//! writes. A boost, ad or new campaign object starts paused unless `paused` is
+//! set to `false`.
 
 use reqwest::Method;
 
@@ -14,21 +16,23 @@ use crate::error::Result;
 use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
     Ad, AdAccountQuery, AdAccountTree, AdActivityLog, AdActivityQuery, AdAudience, AdAudiences,
-    AdCampaign, AdConnection, AdCreatives, AdInsightsQuery, AdLabel, AdLabelInput, AdLibraryPage,
+    AdBusinessCenter, AdCampaign, AdCommentReply, AdCommentWrite, AdCommentsPage, AdCommentsQuery,
+    AdConnection, AdCreatives, AdIdentity, AdInsightsQuery, AdLabel, AdLabelInput, AdLibraryPage,
     AdLibraryQuery, AdObjectQuery, AdSet, AdSource, AdStatus, AdStatusResult, AdStudy,
     ApplyAdLabel, ArchiveLeadForm, AudienceCreated, AudiencesQuery, AuthorizeGoogleAds,
     AuthorizeMetaAds, BoostPost, BoostablePost, CatalogBatchResult, CatalogProducts,
-    CatalogProductsQuery, CreateAd, CreateAdSet, CreateAdStudy, CreateAudience, CreateCampaign,
-    CreateCatalog, CreateCreative, CreateHighDemandPeriod, CreateLeadForm, CreateNetworkAd,
-    CreateProductFeed, CreateReachFrequency, CreateValueRuleSet, Creative, CreativesQuery,
-    EstimateReach, ExternalAd, HighDemandPeriod, InsightsQuery, InsightsReport, IosCampaignLimits,
-    LeadFormDetail, LeadFormQuery, LeadFormSource, LeadPage, LeadPageSubscribed, LeadsFeedPage,
-    LeadsFeedQuery, LeadsPage, LeadsQuery, Message, NetworkAd, PartnershipCreator,
-    PartnershipQuery, ProductCatalog, ProductCatalogs, ProductFeed, ProductFeedUpload, ProductSet,
-    ProductSetInput, ReachEstimate, ReachFrequencyAction, ReachFrequencyPrediction,
-    ReachFrequencyPredictions, RequestPartnership, SetAdStatus, SetAdStatuses, StartFeedUpload,
-    SubscribeLeadPage, TargetingOption, TargetingSearch, UpdateAdSet, UpdateAudience,
-    UpdateCampaign, UpdateCatalog, UpdateNetworkAd, ValueRuleSet, WriteCatalogProducts,
+    CatalogProductsQuery, ConversionsAccepted, CreateAd, CreateAdSet, CreateAdStudy,
+    CreateAudience, CreateCampaign, CreateCatalog, CreateCreative, CreateHighDemandPeriod,
+    CreateLeadForm, CreateNetworkAd, CreateProductFeed, CreateReachFrequency, CreateValueRuleSet,
+    Creative, CreativesQuery, EstimateReach, ExternalAd, HighDemandPeriod, InsightsQuery,
+    InsightsReport, IosCampaignLimits, LeadFormDetail, LeadFormQuery, LeadFormSource, LeadPage,
+    LeadPageSubscribed, LeadsFeedPage, LeadsFeedQuery, LeadsPage, LeadsQuery, Message, NetworkAd,
+    PartnershipCreator, PartnershipQuery, ProductCatalog, ProductCatalogs, ProductFeed,
+    ProductFeedUpload, ProductSet, ProductSetInput, ReachEstimate, ReachFrequencyAction,
+    ReachFrequencyPrediction, ReachFrequencyPredictions, RequestPartnership, SetAdStatus,
+    SetAdStatuses, SparkPost, SparkPostsQuery, StartFeedUpload, SubscribeLeadPage, TargetingOption,
+    TargetingSearch, UpdateAdSet, UpdateAudience, UpdateCampaign, UpdateCatalog, UpdateNetworkAd,
+    UploadConversions, ValueRuleSet, WriteCatalogProducts,
 };
 
 /// Ads.
@@ -214,6 +218,119 @@ impl Ads<'_> {
             .send(Method::POST, "/ads", None, Some(input))
             .await?;
         Ok(body.data)
+    }
+
+    /// TikTok's Business Centers. The one network-named read here, because no
+    /// other network groups ad accounts this way.
+    pub async fn tiktok_business_centers(
+        &self,
+        params: &AdObjectQuery,
+    ) -> Result<Vec<AdBusinessCenter>> {
+        let body: Envelope<Vec<AdBusinessCenter>> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                "/ads/tiktok/business-centers",
+                Some(object_query(params)),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// The accounts an ad can run as; an identity id is a `page_id`.
+    pub async fn tiktok_identities(&self, params: &AudiencesQuery) -> Result<Vec<AdIdentity>> {
+        let mut query: Query = workspace_query(params.workspace_id.as_deref());
+        query.push(("connection_id", params.connection_id.clone()));
+        query.push(("ad_account_id", params.ad_account_id.clone()));
+        let body: Envelope<Vec<AdIdentity>> = self
+            .http
+            .send::<_, ()>(Method::GET, "/ads/tiktok/identities", Some(query), None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Posts already live under an identity, each a candidate Spark ad.
+    pub async fn spark_posts(&self, params: &SparkPostsQuery) -> Result<Vec<SparkPost>> {
+        let mut query: Query = workspace_query(params.workspace_id.as_deref());
+        query.push(("connection_id", params.connection_id.clone()));
+        query.push(("ad_account_id", params.ad_account_id.clone()));
+        query.push(("identity_id", params.identity_id.clone()));
+        let body: Envelope<Vec<SparkPost>> = self
+            .http
+            .send::<_, ()>(Method::GET, "/ads/spark-posts", Some(query), None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Offline conversions against a pixel the ad account owns. Identifiers are
+    /// hashed before anything leaves FoPost.
+    pub async fn upload_conversions(&self, input: &UploadConversions) -> Result<i64> {
+        let body: Envelope<ConversionsAccepted> = self
+            .http
+            .send(Method::POST, "/ads/conversions", None, Some(input))
+            .await?;
+        Ok(body.data.accepted)
+    }
+
+    /// One page of an ad's comments; pass `next_cursor` back as `after`.
+    pub async fn comments(&self, params: &AdCommentsQuery) -> Result<AdCommentsPage> {
+        let mut query: Query = workspace_query(params.workspace_id.as_deref());
+        query.push(("connection_id", params.connection_id.clone()));
+        query.push(("ad_id", params.ad_id.clone()));
+        push_opt(&mut query, "after", params.after.as_ref());
+        let body: Envelope<AdCommentsPage> = self
+            .http
+            .send::<_, ()>(Method::GET, "/ads/comments", Some(query), None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Answer a comment on an ad. Needs `publish` as well as `ads`.
+    pub async fn reply_to_comment(
+        &self,
+        comment_id: &str,
+        input: &AdCommentWrite,
+    ) -> Result<String> {
+        let body: Envelope<AdCommentReply> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/ads/comments/{comment_id}/reply"),
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(body.data.reply_id)
+    }
+
+    /// Hide or show a comment on an ad. Needs `publish` as well as `ads`.
+    pub async fn set_comment_hidden(&self, comment_id: &str, input: &AdCommentWrite) -> Result<()> {
+        let _: Envelope<Message> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/ads/comments/{comment_id}/hide"),
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Remove a comment from the ad on the network. One already gone succeeds.
+    /// Needs `publish` as well as `ads`.
+    pub async fn delete_comment(&self, comment_id: &str, input: &AdCommentWrite) -> Result<()> {
+        let _: Envelope<Message> = self
+            .http
+            .send(
+                Method::DELETE,
+                &format!("/ads/comments/{comment_id}"),
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(())
     }
 
     /// Read the delivery status and lifetime insights from Meta.
