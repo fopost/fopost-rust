@@ -89,7 +89,7 @@ workspace answers `403`.
 | `labels()` | `list`, `get`, `create`, `update`, `delete` |
 | `webhooks()` | `list`, `create`, `update`, `delete`, `test` |
 | `automations()` | `list`, `get`, `create`, `update`, `delete`, `toggle`, `runs`, `get_run`, `stats`, `trigger` |
-| `analytics()` | `overview`, `time_series`, `top_posts`, `labels`, `posts_table`, `posting_streak`, `demographics`, `collect` |
+| `analytics()` | `overview`, `time_series`, `top_posts`, `labels`, `posts_table`, `posting_streak`, `demographics`, `collect`, `decay`, `frequency`, `timeline`, `changes`, `collect_post`, `native_posts` |
 | `media()` | `list`, `upload`, `presign`, `complete`, `upload_direct`, `delete` |
 | `contacts()` | `list`, `get`, `create`, `update`, `delete`, `conversations`, `import`, `list_fields`, `create_field`, `update_field`, `delete_field`, `conversation_analytics` |
 | `broadcasts()` | `list`, `get`, `create`, `update`, `delete`, `send`, `cancel`, `recipients` |
@@ -112,6 +112,60 @@ and deleting our own reply also need `publish`. A boost or ad starts paused unle
 
 That is every endpoint the API documents. Anything not yet wrapped is reachable through
 `client.request(method, path, query, body)`, which gets the same auth, retries, and error handling.
+
+## Analytics
+
+```rust,no_run
+use fopost::models::{AnalyticsQuery, MetricChangesQuery, NativePostsQuery};
+
+# async fn run(client: fopost::Client, post: fopost::models::Post, accounts: Vec<fopost::models::Account>) -> Result<(), fopost::Error> {
+# fn save(_changes: &[fopost::models::MetricChange]) {}
+// How long a post keeps earning, from the repeated readings of each post
+let decay = client.analytics().decay(&AnalyticsQuery::new().days(30)).await?;
+println!("{:?}", decay.half_life_bucket); // Some("1h_3h")
+
+// Whether posting more earned more
+let cadence = client.analytics().frequency(&AnalyticsQuery::new().days(90)).await?;
+if let Some(best) = &cadence.best {
+    println!("{}", best.label); // "3-5 a week"
+}
+
+// Every reading held for one post, with what moved between them
+let timeline = client.analytics().timeline(&post.id).await?;
+
+// Mirror the metrics into your own store, without refetching everything
+let mut query = MetricChangesQuery::new();
+loop {
+    let page = client.analytics().changes(&query).await?;
+    save(&page.changes);
+    match (page.has_more, page.cursor) {
+        (true, Some(cursor)) => query = MetricChangesQuery::new().since(cursor),
+        _ => break,
+    }
+}
+
+// Refresh one post now instead of waiting for the next collection run
+client.analytics().collect_post(&post.id).await?;
+
+// Posts on the account that never went out through FoPost
+let native = client
+    .analytics()
+    .native_posts(&accounts[0].id, &NativePostsQuery::new())
+    .await?;
+# let _ = (timeline, native);
+# Ok(())
+# }
+```
+
+A post is addressed by its FoPost id or by its permalink, so a post made by
+hand on the network works the same way:
+
+```rust,no_run
+# async fn run(client: fopost::Client) -> Result<(), fopost::Error> {
+client.analytics().timeline("https://x.com/acme/status/1").await?;
+# Ok(())
+# }
+```
 
 ## Error handling
 
