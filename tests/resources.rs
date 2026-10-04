@@ -7,12 +7,19 @@ mod common;
 use common::{account_fixture, client};
 use fopost::models::{
     AdBudget, AdGoal, AdInsightsQuery, AdKind, AdObjectLevel, AdObjectQuery, AdObjectRef, AdStatus,
-    AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceSpec, BoostPost, CreateAccountGroup,
-    CreateAudience, CreateAutomation, CreateWebhook, InboxItemState, InboxItemType, InboxReply,
-    InboxSort, InsightsBreakdown, InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts,
-    ListInbox, MarkThreadRead, Platform, SetAdStatuses, SignalLevel, StartInboxConversation,
-    TelegramBotCommand, TriggerType, UpdateInboxItem, UpdateSlackIdentity, ValidateLength,
-    ValidateMedia, ValidateMediaItem, ValidatePost, WebhookEvent,
+    AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceFilter, AudienceSpec, AuthorizeGoogleAds,
+    BoostPost, BroadcastStatus, ContactChannel, ContactFieldType, ConversationAnalyticsQuery,
+    ConversationSort, CreateAccountGroup, CreateAudience, CreateAutomation, CreateBroadcast,
+    CreateContact, CreateContactField, CreateGoogleKeyword, CreatePinterestBoard, CreateSequence,
+    CreateWebhook, DiscordEventInput, DiscordRoleInput, Enroll, GoogleAdScheduleInput,
+    GoogleDayOfWeek, GoogleMatchType, GoogleQuery, GoogleRecommendations, GoogleScope,
+    ImportContacts, InboxItemState, InboxItemType, InboxReply, InboxSort, InsightsBreakdown,
+    InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts, ListBroadcasts, ListContacts,
+    ListInbox, ListRecipients, MarkThreadRead, Platform, RecipientStatus, SequenceStep,
+    SetAdStatuses, SetGoogleAdSchedule, SignalLevel, SkipReason, StartInboxConversation,
+    TelegramBotCommand, TriggerType, UpdateContact, UpdateDiscordIdentity, UpdateInboxItem,
+    UpdateSlackIdentity, ValidateLength, ValidateMedia, ValidateMediaItem, ValidatePost,
+    WebhookEvent,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1464,4 +1471,1290 @@ async fn validating_media_sends_the_url_and_reads_the_type_field() {
     assert_eq!(result.size, 1024);
     assert_eq!(result.mime_type.as_deref(), Some("image/png"));
     assert_eq!(result.media_type.as_deref(), Some("image"));
+}
+
+// ─── Contacts ──────────────────────────────────────────────────────
+
+fn contact_fixture() -> serde_json::Value {
+    serde_json::json!({
+        "id": "con_1",
+        "display_name": "Ada Okafor",
+        "channels": [
+            {"platform": "instagram", "handle": "adaokafor", "externalId": "178414"},
+            {"platform": "x", "handle": "ada_writes", "externalId": null}
+        ],
+        "source": "inbox",
+        "note": null,
+        "first_seen_at": "2026-04-02T09:14:00.000Z",
+        "last_seen_at": "2026-09-18T14:30:00.000Z",
+        "fields": {"plan_tier": "Pro"},
+        "labels": [{"id": "lbl_1", "name": "VIP", "color": "#0070f3"}]
+    })
+}
+
+#[tokio::test]
+async fn contacts_list_reads_the_pagination_block_not_meta() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/contacts"))
+        .and(query_param("workspace_id", "ws_1"))
+        .and(query_param("search", "ada"))
+        .and(query_param("per_page", "10"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [contact_fixture()],
+            "pagination": {"page": 2, "per_page": 10, "total": 11}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let page = client
+        .contacts()
+        .list(
+            &ListContacts::new()
+                .workspace("ws_1")
+                .search("ada")
+                .page(2)
+                .per_page(10),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(page.len(), 1);
+    assert_eq!(page.items[0].display_name.as_deref(), Some("Ada Okafor"));
+    assert_eq!(
+        page.items[0].channels[0].external_id.as_deref(),
+        Some("178414")
+    );
+    assert_eq!(
+        page.items[0].fields.get("plan_tier").map(String::as_str),
+        Some("Pro")
+    );
+    assert_eq!(page.pagination.total, 11);
+    assert_eq!(page.pagination.page, 2);
+}
+
+#[tokio::test]
+async fn contacts_create_omits_an_absent_external_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/contacts"))
+        .and(body_json(serde_json::json!({
+            "workspace_id": "ws_1",
+            "channels": [{"platform": "x", "handle": "ada_writes"}],
+            "display_name": "Ada Okafor",
+            "fields": {"plan_tier": "Pro"}
+        })))
+        .respond_with(
+            ResponseTemplate::new(201)
+                .set_body_json(serde_json::json!({"data": contact_fixture()})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let contact = client
+        .contacts()
+        .create(
+            &CreateContact::new("ws_1", vec![ContactChannel::new("x", "ada_writes")])
+                .display_name("Ada Okafor")
+                .field("plan_tier", "Pro"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(contact.id, "con_1");
+}
+
+#[tokio::test]
+async fn contacts_update_clears_a_field_with_null_and_sends_nothing_else() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/v1/contacts/con_1"))
+        .and(body_json(serde_json::json!({"fields": {"region": null}})))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": contact_fixture()})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    client
+        .contacts()
+        .update("con_1", &UpdateContact::new().clear_field("region"))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn contacts_conversations_reads_the_threads_a_contact_appears_in() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/contacts/con_1/conversations"))
+        .and(query_param("limit", "10"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{
+                "key": "t_182736",
+                "account_id": "acc_1",
+                "account_username": "yourbrand",
+                "platform": "instagram",
+                "messages": 14,
+                "received": 9,
+                "sent": 5,
+                "last_message_at": "2026-09-18T14:30:00.000Z",
+                "last_item_id": "inb_1"
+            }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let rows = client
+        .contacts()
+        .conversations("con_1", Some(10))
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].key, "t_182736");
+    assert_eq!(rows[0].received, 9);
+}
+
+#[tokio::test]
+async fn contacts_import_reports_what_merged_and_what_was_skipped() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/contacts/import"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "created": 1,
+                "merged": 2,
+                "skipped": [{"row": 4, "reason": "platform and handle are both required"}],
+                "unknownColumns": ["lifetime_value"]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let result = client
+        .contacts()
+        .import(&ImportContacts::new(
+            "ws_1",
+            "platform,handle\nx,ada_writes",
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(result.created, 1);
+    assert_eq!(result.merged, 2);
+    assert_eq!(result.skipped[0].row, 4);
+    assert_eq!(result.unknown_columns, vec!["lifetime_value".to_string()]);
+}
+
+#[tokio::test]
+async fn contacts_create_field_puts_the_workspace_on_the_query() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/contacts/fields"))
+        .and(query_param("workspace_id", "ws_1"))
+        .and(body_json(serde_json::json!({
+            "key": "plan_tier",
+            "name": "Plan Tier",
+            "type": "select",
+            "options": ["Free", "Pro"]
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "data": {
+                "id": "fld_1", "key": "plan_tier", "name": "Plan Tier",
+                "type": "select", "options": ["Free", "Pro"], "position": 0
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let field = client
+        .contacts()
+        .create_field(
+            "ws_1",
+            &CreateContactField::new("plan_tier", "Plan Tier")
+                .field_type(ContactFieldType::Select)
+                .options(vec!["Free".into(), "Pro".into()]),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(field.key, "plan_tier");
+    assert_eq!(field.field_type, ContactFieldType::Select);
+}
+
+#[tokio::test]
+async fn contacts_conversation_analytics_reads_the_analytics_route() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/analytics/inbox/conversations"))
+        .and(query_param("days", "30"))
+        .and(query_param("sort", "slowest"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "conversations": [{
+                    "key": "t_1", "accountId": "acc_1", "platform": "instagram",
+                    "received": 9, "sent": 5, "answered": 5, "open": 1,
+                    "medianResponseMinutes": 47, "firstMessageAt": null, "lastMessageAt": null
+                }],
+                "total": 128, "page": 1, "perPage": 25
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let report = client
+        .contacts()
+        .conversation_analytics(
+            &ConversationAnalyticsQuery::new()
+                .days(30)
+                .sort(ConversationSort::Slowest),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(report.total, 128);
+    assert_eq!(report.conversations[0].median_response_minutes, Some(47.0));
+}
+
+fn broadcast_fixture() -> serde_json::Value {
+    serde_json::json!({
+        "id": "bc_1",
+        "name": "September check-in",
+        "text": "New colours just landed.",
+        "account_id": "acc_1",
+        "audience": {"platforms": ["instagram"]},
+        "status": "sent",
+        "scheduled_at": null,
+        "sent_at": "2026-09-19T10:04:00.000Z",
+        "created_at": "2026-09-19T09:58:00.000Z",
+        "counts": {"total": 3, "sent": 2, "skipped": 1, "failed": 0, "pending": 0}
+    })
+}
+
+#[tokio::test]
+async fn broadcasts_list_reads_the_pagination_block_not_meta() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/broadcasts"))
+        .and(query_param("workspace_id", "ws_1"))
+        .and(query_param("status", "sent"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [broadcast_fixture()],
+            "pagination": {"page": 2, "per_page": 10, "total": 11}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let page = client
+        .broadcasts()
+        .list(
+            &ListBroadcasts::new()
+                .workspace("ws_1")
+                .status(BroadcastStatus::Sent)
+                .page(2)
+                .per_page(10),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(page.len(), 1);
+    assert_eq!(page.items[0].name, "September check-in");
+    let counts = page.items[0].counts.as_ref().unwrap();
+    assert_eq!(counts.sent, 2);
+    assert_eq!(counts.skipped, 1);
+    assert_eq!(page.pagination.total, 11);
+}
+
+#[tokio::test]
+async fn broadcasts_create_sends_the_snake_case_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/broadcasts"))
+        .and(body_json(serde_json::json!({
+            "workspace_id": "ws_1",
+            "account_id": "acc_1",
+            "name": "September check-in",
+            "text": "New colours just landed.",
+            "audience": {"platforms": ["instagram"]},
+            "scheduled_at": "2026-10-01T09:00:00.000Z"
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "data": broadcast_fixture()
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    client
+        .broadcasts()
+        .create(
+            &CreateBroadcast::new(
+                "ws_1",
+                "acc_1",
+                "September check-in",
+                "New colours just landed.",
+            )
+            .audience(AudienceFilter::new().platforms(["instagram"]))
+            .scheduled_at("2026-10-01T09:00:00.000Z"),
+        )
+        .await
+        .unwrap();
+}
+
+/// A closed messaging window has to be readable, or a non-send is a mystery.
+#[tokio::test]
+async fn a_skipped_recipient_keeps_its_reason() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/broadcasts/bc_1/recipients"))
+        .and(query_param("status", "skipped"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{
+                "contact_id": "con_1",
+                "display_name": "Sam Rivera",
+                "status": "skipped",
+                "skip_reason": "window_closed",
+                "sent_at": null,
+                "error": null
+            }],
+            "pagination": {"page": 1, "per_page": 50, "total": 1}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let page = client
+        .broadcasts()
+        .recipients(
+            "bc_1",
+            &ListRecipients::new().status(RecipientStatus::Skipped),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(page.items[0].status, RecipientStatus::Skipped);
+    assert_eq!(page.items[0].skip_reason, Some(SkipReason::WindowClosed));
+}
+
+#[tokio::test]
+async fn broadcast_send_reports_how_many_matched() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/broadcasts/bc_1/send"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"id": "bc_1", "status": "sending", "recipients": 3}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let sent = client.broadcasts().send("bc_1").await.unwrap();
+
+    assert_eq!(sent.recipients, 3);
+    assert_eq!(sent.status, "sending");
+}
+
+#[tokio::test]
+async fn sequence_steps_travel_as_given() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/sequences"))
+        .and(body_json(serde_json::json!({
+            "workspace_id": "ws_1",
+            "account_id": "acc_1",
+            "name": "Welcome",
+            "steps": [{"delay_hours": 0.0, "text": "Hi"}]
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "data": {
+                "id": "seq_1",
+                "name": "Welcome",
+                "account_id": "acc_1",
+                "steps": [
+                    {"delay_hours": 0, "text": "Hi"},
+                    {"delay_hours": 48, "text": "Still here?"}
+                ],
+                "status": "active",
+                "created_at": "2026-09-12T08:00:00.000Z"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let sequence = client
+        .sequences()
+        .create(&CreateSequence::new(
+            "ws_1",
+            "acc_1",
+            "Welcome",
+            vec![SequenceStep::new(0.0, "Hi")],
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(sequence.steps[1].delay_hours, 48.0);
+}
+
+#[tokio::test]
+async fn enroll_takes_ids_or_an_audience() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/sequences/seq_1/enroll"))
+        .and(body_json(
+            serde_json::json!({"contact_ids": ["con_1", "con_2"]}),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"id": "seq_1", "enrolled": 2}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let enrolled = client
+        .sequences()
+        .enroll("seq_1", &Enroll::contacts(["con_1", "con_2"]))
+        .await
+        .unwrap();
+
+    assert_eq!(enrolled.enrolled, 2);
+}
+
+#[tokio::test]
+async fn unenroll_names_the_contacts_it_stops() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/sequences/seq_1/unenroll"))
+        .and(body_json(serde_json::json!({"contact_ids": ["con_1"]})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"id": "seq_1", "stopped": 1}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let stopped = client
+        .sequences()
+        .unenroll("seq_1", &["con_1".to_string()])
+        .await
+        .unwrap();
+
+    assert_eq!(stopped.stopped, 1);
+}
+
+#[tokio::test]
+async fn discord_channels_and_the_channel_switch() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/discord/channels"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{"id": "c2", "name": "launches", "type": 0, "parent_id": null, "nsfw": false, "can_post": true, "is_current": true}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path("/v1/accounts/acc_1/discord/channels/current"))
+        .and(body_json(serde_json::json!({"channel_id": "c2"})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"id": "c2", "name": "launches", "is_current": true}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let channels = client.accounts().discord_channels("acc_1").await.unwrap();
+    assert!(channels[0].is_current);
+    let switched = client
+        .accounts()
+        .switch_discord_channel("acc_1", "c2")
+        .await
+        .unwrap();
+    assert_eq!(switched.name, "launches");
+}
+
+#[tokio::test]
+async fn updating_the_discord_identity_omits_kept_fields_and_nulls_cleared_ones() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/v1/accounts/acc_1/discord/identity"))
+        .and(body_json(serde_json::json!({"username": "Release Bot"})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"username": "Release Bot", "avatar_url": null}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let update = UpdateDiscordIdentity {
+        username: Some(Some("Release Bot".into())),
+        ..Default::default()
+    };
+    let identity = client
+        .accounts()
+        .update_discord_identity("acc_1", &update)
+        .await
+        .unwrap();
+    assert_eq!(identity.username.as_deref(), Some("Release Bot"));
+}
+
+#[tokio::test]
+async fn a_discord_scheduled_event_round_trips() {
+    let server = MockServer::start().await;
+    let event = serde_json::json!({
+        "id": "e1",
+        "name": "Launch stream",
+        "description": null,
+        "channel_id": null,
+        "location": "https://example.com/live",
+        "start_time": "2026-10-01T18:00:00.000Z",
+        "end_time": "2026-10-01T19:00:00.000Z",
+        "status": "scheduled",
+        "user_count": 0
+    });
+    Mock::given(method("POST"))
+        .and(path("/v1/accounts/acc_1/discord/events"))
+        .and(body_json(serde_json::json!({
+            "name": "Launch stream",
+            "start_time": "2026-10-01T18:00:00.000Z",
+            "end_time": "2026-10-01T19:00:00.000Z",
+            "location": "https://example.com/live"
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({"data": event})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/discord/events"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": [event]})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path("/v1/accounts/acc_1/discord/events/e1"))
+        .and(body_json(serde_json::json!({"status": "canceled"})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {"id": "e1", "name": "Launch stream", "start_time": "2026-10-01T18:00:00.000Z", "status": "canceled"}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/v1/accounts/acc_1/discord/events/e1"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"deleted": true}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let accounts = client.accounts();
+
+    let created = accounts
+        .create_discord_event(
+            "acc_1",
+            &DiscordEventInput {
+                name: Some("Launch stream".into()),
+                start_time: Some("2026-10-01T18:00:00.000Z".into()),
+                end_time: Some("2026-10-01T19:00:00.000Z".into()),
+                location: Some("https://example.com/live".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(created.id, "e1");
+
+    let listed = accounts.discord_events("acc_1").await.unwrap();
+    assert_eq!(listed.len(), 1);
+
+    let updated = accounts
+        .update_discord_event(
+            "acc_1",
+            "e1",
+            &DiscordEventInput {
+                status: Some("canceled".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(updated.status, "canceled");
+
+    let ack = accounts.delete_discord_event("acc_1", "e1").await.unwrap();
+    assert_eq!(ack.deleted, Some(true));
+}
+
+#[tokio::test]
+async fn discord_members_roles_and_dms() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/discord/members"))
+        .and(query_param("q", "ada"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{"id": "u7", "username": "ada", "is_bot": false, "roles": ["r1"]}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/accounts/acc_1/discord/roles"))
+        .and(body_json(serde_json::json!({"name": "Beta"})))
+        .respond_with(
+            ResponseTemplate::new(201)
+                .set_body_json(serde_json::json!({"data": {"id": "r2", "name": "Beta"}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/v1/accounts/acc_1/discord/roles/r2/members/u7"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"assigned": true}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/accounts/acc_1/discord/dm"))
+        .and(body_json(
+            serde_json::json!({"member_id": "u7", "content": "hi"}),
+        ))
+        .respond_with(
+            ResponseTemplate::new(201)
+                .set_body_json(serde_json::json!({"data": {"id": "m1", "channel_id": "dm1"}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let accounts = client.accounts();
+
+    let members = accounts
+        .discord_members("acc_1", Some("ada"), None)
+        .await
+        .unwrap();
+    assert_eq!(members[0].roles, vec!["r1".to_string()]);
+
+    let role = accounts
+        .create_discord_role(
+            "acc_1",
+            &DiscordRoleInput {
+                name: Some("Beta".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let assigned = accounts
+        .add_discord_member_role("acc_1", &role.id, "u7")
+        .await
+        .unwrap();
+    assert_eq!(assigned.assigned, Some(true));
+
+    let sent = accounts.send_discord_dm("acc_1", "u7", "hi").await.unwrap();
+    assert_eq!(sent.channel_id, "dm1");
+}
+
+#[tokio::test]
+async fn a_discord_webhook_connection_is_a_conflict() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/discord/channels"))
+        .respond_with(ResponseTemplate::new(409).set_body_json(serde_json::json!({
+            "error": "webhook_connection",
+            "message": "Upgrade it to the bot first"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let err = client
+        .accounts()
+        .discord_channels("acc_1")
+        .await
+        .unwrap_err();
+    assert_eq!(err.status(), Some(409));
+    assert_eq!(err.code(), Some("webhook_connection"));
+}
+
+// ─── Google Ads ────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn google_keywords_name_the_connection_and_the_customer() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/ads/google/keywords"))
+        .and(query_param("connection_id", "conn_1"))
+        .and(query_param("customer_id", "1234567890"))
+        .and(query_param("ad_group_id", "1234567890~adGroup~77"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{
+                "id": "1234567890~keyword~77~99",
+                "adGroupId": "1234567890~adGroup~77",
+                "text": "running shoes",
+                "matchType": "EXACT",
+                "status": "ENABLED",
+                "cpcBidMinor": 180,
+                "negative": false
+            }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let scope = GoogleScope::new("conn_1", "1234567890");
+    let keywords = client
+        .google_ads()
+        .keywords(&scope, Some("1234567890~adGroup~77"))
+        .await
+        .expect("keywords");
+
+    assert_eq!(keywords[0].text, "running shoes");
+    assert_eq!(keywords[0].cpc_bid_minor, Some(180));
+}
+
+#[tokio::test]
+async fn google_create_keyword_sends_the_scope_in_the_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/ads/google/keywords"))
+        .and(body_json(serde_json::json!({
+            "workspaceId": "ws_1",
+            "connectionId": "conn_1",
+            "customerId": "1234567890",
+            "adGroupId": "1234567890~adGroup~77",
+            "text": "running shoes",
+            "matchType": "EXACT"
+        })))
+        .respond_with(
+            ResponseTemplate::new(201)
+                .set_body_json(serde_json::json!({"data": {"id": "1234567890~keyword~77~99"}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let id = client
+        .google_ads()
+        .create_keyword(&CreateGoogleKeyword {
+            scope: GoogleScope::new("conn_1", "1234567890").in_workspace("ws_1"),
+            ad_group_id: "1234567890~adGroup~77".into(),
+            text: "running shoes".into(),
+            match_type: GoogleMatchType::Exact,
+            cpc_bid_minor: None,
+        })
+        .await
+        .expect("create_keyword");
+
+    assert_eq!(id, "1234567890~keyword~77~99");
+}
+
+#[tokio::test]
+async fn google_ad_schedule_is_replaced_with_put() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/v1/ads/google/ad-schedule"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": {"slots": 2}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let slots = client
+        .google_ads()
+        .set_ad_schedule(&SetGoogleAdSchedule {
+            scope: GoogleScope::new("conn_1", "1234567890").in_workspace("ws_1"),
+            campaign_id: "1234567890~campaign~55".into(),
+            slots: vec![GoogleAdScheduleInput {
+                day_of_week: GoogleDayOfWeek::Monday,
+                start_hour: 9,
+                end_hour: 18,
+                bid_modifier: None,
+            }],
+        })
+        .await
+        .expect("set_ad_schedule");
+
+    assert_eq!(slots, 2);
+}
+
+#[tokio::test]
+async fn google_query_returns_rows_as_google_sends_them() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/ads/insights/query"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"rows": [{"campaign": {"id": "55"}}]}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let result = client
+        .google_ads()
+        .query(&GoogleQuery {
+            scope: GoogleScope::new("conn_1", "1234567890"),
+            query: "SELECT campaign.id FROM campaign".into(),
+        })
+        .await
+        .expect("query");
+
+    assert_eq!(result.rows.len(), 1);
+}
+
+#[tokio::test]
+async fn authorize_google_has_its_own_route() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/ads/connections/google/authorize"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({"data": {"url": "https://accounts.google.com/o/x"}}),
+            ),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let url = client
+        .ads()
+        .authorize_google(&AuthorizeGoogleAds::new("ws_1"))
+        .await
+        .expect("authorize_google");
+
+    assert_eq!(url, "https://accounts.google.com/o/x");
+}
+
+#[tokio::test]
+async fn creating_a_pinterest_board_omits_the_optionals_it_was_not_given() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/accounts/acc_1/pinterest/boards"))
+        .and(body_json(serde_json::json!({"name": "Recipes"})))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "data": {"id": "b1", "name": "Recipes", "privacy": "PUBLIC", "description": null, "image": null}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let board = client
+        .accounts()
+        .create_pinterest_board(
+            "acc_1",
+            &CreatePinterestBoard {
+                name: "Recipes".to_string(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(board.id, "b1");
+}
+
+#[tokio::test]
+async fn setting_the_default_youtube_playlist_sends_null_to_clear_it() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/v1/accounts/acc_1/youtube/playlists/default"))
+        .and(body_json(serde_json::json!({"playlist_id": null})))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"playlist_id": null}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let stored = client
+        .accounts()
+        .set_default_youtube_playlist("acc_1", None)
+        .await
+        .unwrap();
+
+    assert!(stored.is_none());
+}
+
+#[tokio::test]
+async fn bluesky_languages_round_trip_through_the_envelope() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/v1/accounts/acc_1/bluesky/languages"))
+        .and(body_json(serde_json::json!({"languages": ["en", "pt-BR"]})))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"languages": ["en", "pt-BR"]}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let result = client
+        .accounts()
+        .set_bluesky_languages("acc_1", &["en".to_string(), "pt-BR".to_string()])
+        .await
+        .unwrap();
+
+    assert_eq!(result.languages, vec!["en", "pt-BR"]);
+}
+
+#[tokio::test]
+async fn tiktok_creator_info_reports_the_accounts_own_switches() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/tiktok/creator-info"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "privacy_level_options": ["PUBLIC_TO_EVERYONE"],
+                "duet_disabled": true,
+                "max_video_post_duration_sec": 600
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let info = client
+        .accounts()
+        .tiktok_creator_info("acc_1")
+        .await
+        .unwrap();
+
+    assert!(info.duet_disabled);
+    assert!(!info.stitch_disabled);
+    assert_eq!(info.max_video_post_duration_sec, Some(600));
+}
+
+#[tokio::test]
+async fn tiktok_music_search_passes_the_query_through() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/tiktok/music"))
+        .and(query_param("q", "sunrise"))
+        .and(query_param("limit", "5"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{ "id": "m1", "title": "Sunrise", "author": "Kite" }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let tracks = client
+        .accounts()
+        .tiktok_music("acc_1", "sunrise", Some(5))
+        .await
+        .unwrap();
+
+    assert_eq!(tracks[0].id, "m1");
+    assert_eq!(tracks[0].author.as_deref(), Some("Kite"));
+}
+
+#[tokio::test]
+async fn tiktok_video_lookup_returns_the_address_a_repurpose_run_reads() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/accounts/acc_1/tiktok/video-download"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "video_id": "7300000000000000000",
+                "download_url": "https://www.tiktok.com/@a/video/7300000000000000000"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let video = client
+        .accounts()
+        .tiktok_video_lookup(
+            "acc_1",
+            "https://www.tiktok.com/@a/video/7300000000000000000",
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(video.video_id, "7300000000000000000");
+    assert!(video.download_url.is_some());
+}
+
+#[tokio::test]
+async fn instagram_stories_ask_for_insights_only_when_requested() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/instagram/stories"))
+        .and(query_param("insights", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{"id": "s1", "media_type": "IMAGE", "insights": {"views": 40}}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let stories = client
+        .accounts()
+        .instagram_stories("acc_1", true)
+        .await
+        .unwrap();
+
+    assert_eq!(stories[0].insights.as_ref().unwrap()["views"], 40);
+}
+
+#[tokio::test]
+async fn linkedin_mentions_carry_the_annotation_to_paste() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/linkedin/mentions"))
+        .and(query_param("q", "devtestco"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{
+                "urn": "urn:li:organization:2414183",
+                "name": "Devtestco",
+                "annotation": "@[Devtestco](urn:li:organization:2414183)"
+            }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let mentions = client
+        .accounts()
+        .linkedin_mentions("acc_1", "devtestco")
+        .await
+        .unwrap();
+
+    assert_eq!(
+        mentions[0].annotation,
+        "@[Devtestco](urn:li:organization:2414183)"
+    );
+}
+
+#[tokio::test]
+async fn accounts_platform_metrics_asks_for_raw_and_decodes_the_set() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/insights"))
+        .and(query_param("raw", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "platform": "facebook",
+                "account": {
+                    "fetched_at": "2026-09-20T02:00:00.000Z",
+                    "metrics": [
+                        {
+                            "key": "page_daily_video_ad_break_earnings",
+                            "label": "Ad Break Earnings",
+                            "kind": "currency_usd",
+                            "value": 42.15
+                        },
+                        {
+                            "key": "page_impressions_paid",
+                            "label": "Paid Impressions",
+                            "kind": "count",
+                            "value": 1500
+                        }
+                    ]
+                },
+                "post": {
+                    "external_post_id": "123_456",
+                    "fetched_at": "2026-09-20T02:00:00.000Z",
+                    "metrics": []
+                }
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let metrics = client.accounts().platform_metrics("acc_1").await.unwrap();
+
+    assert_eq!(metrics.platform.as_deref(), Some("facebook"));
+    assert_eq!(
+        metrics.account.fetched_at.as_deref(),
+        Some("2026-09-20T02:00:00.000Z")
+    );
+    assert_eq!(
+        metrics
+            .account
+            .metrics
+            .iter()
+            .map(|m| m.key.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "page_daily_video_ad_break_earnings",
+            "page_impressions_paid"
+        ]
+    );
+    assert_eq!(metrics.account.metrics[0].as_number(), Some(42.15));
+    assert_eq!(metrics.post.external_post_id.as_deref(), Some("123_456"));
+    assert!(metrics.post.metrics.is_empty());
+}
+
+#[tokio::test]
+async fn accounts_platform_metrics_keeps_a_series_value_as_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/insights"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "platform": "youtube",
+                "account": {
+                    "fetched_at": null,
+                    "metrics": [{
+                        "key": "daily_views",
+                        "label": "Views by Day",
+                        "kind": "series",
+                        "value": [{"day": "2026-09-19", "views": 600}]
+                    }]
+                },
+                "post": {"external_post_id": null, "fetched_at": null, "metrics": []}
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let metrics = client.accounts().platform_metrics("acc_1").await.unwrap();
+    let row = &metrics.account.metrics[0];
+
+    assert_eq!(row.as_number(), None);
+    assert_eq!(row.value[0]["views"], 600);
+    assert!(metrics.account.fetched_at.is_none());
+}
+
+#[tokio::test]
+async fn accounts_platform_metrics_surfaces_a_pending_grant() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/accounts/acc_1/insights"))
+        .respond_with(ResponseTemplate::new(503).set_body_json(serde_json::json!({
+            "error": "platform_metrics_unavailable",
+            "message": "google-business metrics are not available on this deployment yet."
+        })))
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let err = client
+        .accounts()
+        .platform_metrics("acc_1")
+        .await
+        .expect_err("a pending grant must be an error");
+
+    assert_eq!(err.status(), Some(503));
+    assert_eq!(err.code(), Some("platform_metrics_unavailable"));
+}
+
+#[tokio::test]
+async fn google_recommendations_join_the_types_filter() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/ads/google/recommendations"))
+        .and(query_param("types", "KEYWORD,TARGET_CPA_OPT_IN"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{
+                "id": "customers/1234567890/recommendations/ABC~1",
+                "type": "KEYWORD",
+                "campaignId": "1234567890~campaign~55",
+                "dismissed": false,
+                "impact": { "baseClicks": 10.0, "potentialClicks": 25.0 }
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let scope = GoogleScope::new("conn_1", "1234567890");
+    let rows = client
+        .google_ads()
+        .recommendations(&scope, &["KEYWORD", "TARGET_CPA_OPT_IN"])
+        .await
+        .expect("recommendations");
+
+    assert_eq!(rows[0].kind, "KEYWORD");
+    assert_eq!(
+        rows[0].impact.as_ref().and_then(|i| i.potential_clicks),
+        Some(25.0)
+    );
+}
+
+#[tokio::test]
+async fn google_apply_recommendations_sends_the_ids() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/ads/google/recommendations/apply"))
+        .and(body_json(serde_json::json!({
+            "workspaceId": "ws_1",
+            "connectionId": "conn_1",
+            "customerId": "1234567890",
+            "ids": ["customers/1234567890/recommendations/ABC~1"]
+        })))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": {"applied": 1}})),
+        )
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let applied = client
+        .google_ads()
+        .apply_recommendations(&GoogleRecommendations {
+            scope: GoogleScope::new("conn_1", "1234567890").in_workspace("ws_1"),
+            ids: vec!["customers/1234567890/recommendations/ABC~1".into()],
+        })
+        .await
+        .expect("apply");
+
+    assert_eq!(applied, 1);
 }
