@@ -14,6 +14,9 @@ string_enum! {
         DeliveryFailed => "delivery.failed",
         DeliveryDelayed => "delivery.delayed",
         AccountHealthChanged => "account.health_changed",
+        ArticlePublished => "article.published",
+        /// The sample a blog Website target receives from `test_website`.
+        ArticleTest => "article.test",
     }
 }
 
