@@ -101,6 +101,7 @@ workspace answers `403`.
 | `ads()` | `list`, `external`, `boostable`, `connections`, `sources`, `providers`, `authorize`, `delete_connection`, `boost`, `create`, `refresh`, `set_status`, `delete`, `audiences`, `create_audience`, `search_targeting`, `lead_forms`, `create_lead_form`, `leads`, `tree`, `create_campaign`, `campaign`, `update_campaign`, `delete_campaign`, `duplicate_campaign`, `create_ad_set`, `ad_set`, `update_ad_set`, `delete_ad_set`, `duplicate_ad_set`, `create_network_ad`, `network_ad`, `update_network_ad`, `delete_network_ad`, `duplicate_network_ad`, `set_statuses`, `creatives`, `create_creative`, `creative`, `delete_creative`, `audience`, `update_audience`, `delete_audience`, `add_audience_users`, `add_audience_companies`, `estimate_reach`, `insights`, `ad_insights`, `lead_form`, `archive_lead_form`, `leads_feed`, `lead_pages`, `subscribe_lead_page`, `unsubscribe_lead_page`, `bid_pricing`, `supply_forecast`, `conversion_rules`, `create_conversion_rule`, `conversion_rule`, `update_conversion_rule`, `delete_conversion_rule`, `attach_conversion_rule`, `detach_conversion_rule`, `conversion_metrics`, `send_conversion_events` |
 | `google_business()` | `get_location`, `update_location`, `get_attributes`, `update_attributes`, `get_menus`, `replace_menus`, `get_services`, `replace_services`, `list_media`, `add_media`, `delete_media`, `list_place_actions`, `create_place_action`, `update_place_action`, `delete_place_action`, `get_verification_options`, `start_verification`, `complete_verification`, `get_performance`, `get_search_keywords`, `assign` |
 | `validate()` | `post`, `length`, `media` |
+| `blog()` | `get_settings`, `update_settings`, `rotate_website_secret`, `test_website`, `list_keywords`, `plan_keywords`, `add_keyword`, `update_keyword`, `delete_keyword`, `list_articles`, `request_article`, `get_article`, `update_article`, `regenerate_article`, `publish_article`, `reject_article`, `delete_article` |
 | `activity()` | `list` |
 
 `account_groups()` needs the `accounts` scope. `inbox()`, `knowledge()`, `contacts()`, `broadcasts()` and `sequences()` need the `inbox` scope (and `publish` on `broadcasts().send`/`cancel` and `sequences().enroll`/`unenroll`, which reach a platform), except `contacts().conversation_analytics`, which needs `analytics` and `ads()` the `ads` scope; `boost`, `create`, `set_status`,
@@ -306,6 +307,58 @@ API change behind it, so the same loop is three pieces with this client:
    `client.inbox().start_conversation(…)`.
 
 Reading needs the `inbox` scope; answering needs `publish` as well.
+
+## Blog
+
+`client.blog()` plans keywords, drafts articles and publishes them to a website. An
+article goes to a website; a post goes to a social network. Reads, settings and keyword
+edits need the `posts` scope; `plan_keywords`, `request_article` and `regenerate_article`
+spend credits and need `ai` (a spent balance is a 402 with an `upgrade_url`);
+`publish_article` needs `publish` and answers 409 `no_target` until the settings name a
+target.
+
+```rust,no_run
+use fopost::models::{BlogArticleStatus, RequestBlogArticle};
+
+# async fn run(client: fopost::Client, workspace_id: &str) -> fopost::Result<()> {
+let queued = client
+    .blog()
+    .request_article(
+        workspace_id,
+        &RequestBlogArticle::keyword("trail running shoes").instructions("Compare three models"),
+    )
+    .await?;
+
+let article = client.blog().get_article(workspace_id, &queued.id).await?;
+if article.status == BlogArticleStatus::Draft {
+    client.blog().publish_article(workspace_id, &article.id).await?;
+}
+# Ok(())
+# }
+```
+
+A Website target POSTs every published article to `website_url`, signed with the secret
+`update_settings` returns the first time the URL is set (rotate it with
+`rotate_website_secret`). Every FoPost webhook is signed the same way, so one verifier
+covers both. Hand it the request bytes exactly as received:
+
+```rust,no_run
+use fopost::models::BlogArticlePublished;
+use fopost::{verify_webhook, WebhookSignature};
+
+# fn handle(raw_body: &[u8], headers: &reqwest::header::HeaderMap, secret: &str) -> Result<(), Box<dyn std::error::Error>> {
+let envelope = verify_webhook(raw_body, &WebhookSignature::from_headers(headers), secret)?;
+if envelope.event.as_str() == "article.published" {
+    let article: BlogArticlePublished = envelope.data_as()?;
+    println!("{} is live at {:?}", article.title, article.published_url);
+}
+# Ok(())
+# }
+```
+
+`verify_webhook` prefers the timestamped `X-FoPost-Signature-256` and refuses a delivery
+more than five minutes from the clock; it falls back to the body-only `X-FoPost-Signature`
+only when no timestamp header is present. The comparison is constant-time.
 
 ## Contributing
 
