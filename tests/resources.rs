@@ -2758,3 +2758,78 @@ async fn google_apply_recommendations_sends_the_ids() {
 
     assert_eq!(applied, 1);
 }
+
+#[tokio::test]
+async fn media_limits_reads_the_ceilings_for_a_workspace() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/media/limits"))
+        .and(query_param("workspaceId", "ws_1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "maxFileBytes": 419430400u64,
+                "source": "accounts",
+                "connectedAccounts": 5,
+                "largeUploadsEnabled": false,
+                "nextTier": { "upToAccounts": 15, "maxFileBytes": 2147483648u64 },
+                "multipartMaxFileBytes": 104857600u64,
+                "maxFilesPerUpload": 5,
+                "directUploadAvailable": true,
+                "allowedTypes": ["image/png", "video/mp4"]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let limits = client.media().limits(Some("ws_1")).await.unwrap();
+
+    assert_eq!(limits.max_file_bytes, 419_430_400);
+    assert_eq!(
+        limits.source,
+        Some(fopost::models::UploadLimitSource::Accounts)
+    );
+    assert_eq!(limits.connected_accounts, 5);
+    assert_eq!(limits.next_tier.unwrap().up_to_accounts, Some(15));
+    assert_eq!(limits.multipart_max_file_bytes, 104_857_600);
+    assert_eq!(limits.allowed_types, ["image/png", "video/mp4"]);
+}
+
+#[tokio::test]
+async fn presign_sends_the_optional_fields_and_reads_max_file_bytes() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/media/presign"))
+        .and(body_json(serde_json::json!({
+            "workspaceId": "ws_1",
+            "filename": "logo.png",
+            "mimeType": "image/png",
+            "size": 5368709120u64,
+            "folderId": "fld_1",
+            "brandRole": "person",
+            "brandVoiceId": "bv_1",
+            "personConsent": { "subject": "Our founder", "statement": "Agreed in writing" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "uploadId": "up_1",
+                "uploadUrl": "https://storage.example/up_1",
+                "headers": { "Content-Type": "image/png" },
+                "maxFileBytes": 5368709120u64
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let input = fopost::models::PresignUpload::new("ws_1", "logo.png", "image/png", 5_368_709_120)
+        .folder("fld_1")
+        .brand_role(fopost::models::BrandRole::Person)
+        .brand_voice("bv_1")
+        .person_consent("Our founder", "Agreed in writing");
+    let presigned = client.media().presign(&input).await.unwrap();
+
+    assert_eq!(presigned.max_file_bytes, Some(5_368_709_120));
+}
