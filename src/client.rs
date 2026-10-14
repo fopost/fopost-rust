@@ -5,7 +5,7 @@ use std::time::Duration;
 use crate::error::{Error, Result};
 use crate::http::{HttpClient, DEFAULT_BASE_URL, USER_AGENT};
 use crate::resources::{
-    AccountGroups, Accounts, Activity, Ads, Analytics, Automations, Broadcasts, Contacts,
+    AccountGroups, Accounts, Activity, Ads, Analytics, Automations, Blog, Broadcasts, Contacts,
     GoogleAds, GoogleBusiness, Inbox, Knowledge, Labels, Media, Posts, Sequences, Validate,
     Webhooks, Workspaces,
 };
@@ -139,6 +139,11 @@ impl Client {
     /// A series of messages on a delay, walked per enrolled contact.
     pub fn sequences(&self) -> Sequences<'_> {
         Sequences { http: &self.http }
+    }
+
+    /// Keyword planning, article drafting and publishing to a website.
+    pub fn blog(&self) -> Blog<'_> {
+        Blog { http: &self.http }
     }
 
     /// Boosts, ads, audiences and lead forms on a Meta Ads connection.

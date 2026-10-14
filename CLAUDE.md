@@ -8,7 +8,7 @@ Crate `fopost` on crates.io — the official Rust client for the FoPost REST API
 (`fopost.com`). Version `0.3.0`. It wraps the API's HTTP surface in resource accessors on
 `Client`: `posts()`, `accounts()`, `workspaces()`, `labels()`, `webhooks()`,
 `automations()`, `analytics()`, `media()`, `inbox()`, `contacts()`, `broadcasts()`,
-`sequences()`, `ads()`, `validate()`.
+`sequences()`, `ads()`, `validate()`, `blog()`.
 
 Edition 2021, `rust-version = "1.88"` (the MSRV CI builds against). Async on `reqwest`
 0.12 + `tokio`; models are `serde`; errors are `thiserror`. Docs at docs.rs/fopost.
@@ -34,6 +34,7 @@ src/
   client.rs      Client + ClientBuilder, resource accessors, request() escape hatch
   http.rs        HttpClient: headers, retry loop, Envelope<T>, Query/push_opt, decode
   error.rs       Error enum, ApiError
+  webhook.rs     verify_webhook: HMAC check of a delivery, timestamped signature first
   models/        common posts accounts workspaces labels webhooks automations analytics media
                  inbox contacts broadcasts ads validate
   resources/     one module per group, each a borrowed struct holding &HttpClient
@@ -113,6 +114,21 @@ inbox actions that act on the platform (`edit_comment`, `like`/`unlike`, `pin`/`
 `react`, `start_conversation`, `set_typing`, media or quick replies on `reply_with`, deleting
 our own reply), and a boost
 or ad starts paused unless `paused` is `false`; keep both in the doc comments.
+
+`blog()` covers the `Blog` tag: settings (`posts`), keywords (`posts`, `plan_keywords`
+is `ai`) and articles (`request_article`/`regenerate_article` are `ai`, `publish_article`
+is `publish`). Every wire field is camelCase; `workspaceId` is a query parameter on the
+`{id}` routes and a body field on the collection routes (`InWorkspace` flattens it beside
+the payload). `update_settings` decodes the whole `{data, websiteSecret}` body as
+`BlogSettingsUpdated` because the secret sits outside the envelope. `BlogArticleFull`
+flattens `BlogArticle` and derefs to it.
+
+`verify_webhook(raw_body, &WebhookSignature, secret)` in `src/webhook.rs` (re-exported at
+the root) verifies any outbound delivery, including a blog Website target's. It uses
+`hmac` + `sha2` with `verify_slice` (constant time), prefers `X-FoPost-Signature-256` over
+`<timestamp>.<body>` within `WEBHOOK_TOLERANCE` (300 s), and falls back to the body-only
+`X-FoPost-Signature` only when no timestamp header is present. `verify_webhook_at` takes
+the clock, which is how the tests pin staleness.
 
 ## Commands
 

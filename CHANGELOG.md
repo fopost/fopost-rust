@@ -6,6 +6,12 @@ All notable changes to the `fopost` crate are documented here.
 
 ### Added
 
+- `client.blog()` wraps the Blog tag: settings and the website secret, keyword planning,
+  and the article lifecycle (`request_article`, `get_article`, `update_article`,
+  `regenerate_article`, `publish_article`, `reject_article`, `delete_article`).
+- `verify_webhook` and `WebhookSignature` check a delivery's signature in constant time,
+  preferring the timestamped `X-FoPost-Signature-256` header and refusing a delivery more
+  than five minutes from the clock; `sign_webhook` produces the same signature for tests.
 - `media().limits(workspace_id)` reads `GET /media/limits`: the per-file ceiling by any
   route, the multipart ceiling, the connected-account tier and the next one, and the
   allowed content types.
