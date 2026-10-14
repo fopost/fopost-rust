@@ -114,6 +114,16 @@ impl ApiError {
         self.status == 429
     }
 
+    /// 413 — a file is bigger than the account may upload; see [`Self::max_file_bytes`].
+    pub fn is_file_too_large(&self) -> bool {
+        self.status == 413
+    }
+
+    /// The ceiling a 413 `file_too_large` reports, in bytes.
+    pub fn max_file_bytes(&self) -> Option<u64> {
+        self.body.as_ref()?.get("max_file_bytes")?.as_u64()
+    }
+
     pub(crate) fn from_body(
         status: u16,
         body: Option<serde_json::Value>,

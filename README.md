@@ -82,7 +82,7 @@ workspace answers `403`.
 
 | Namespace | Methods |
 | --- | --- |
-| `posts()` | `list`, `list_all`, `get`, `create`, `update`, `delete`, `duplicate`, `publish`, `retry`, `cancel`, `preflight`, `deliveries`, `publish_runs`, `analytics`, `bulk`, `validate_import`, `commit_import`, `rollback_import` |
+| `posts()` | `list`, `list_all`, `get`, `create`, `create_with_files`, `update`, `update_with_files`, `delete`, `duplicate`, `publish`, `retry`, `cancel`, `preflight`, `deliveries`, `publish_runs`, `analytics`, `bulk`, `validate_import`, `commit_import`, `rollback_import` |
 | `accounts()` | `list`, `list_with`, `get`, `create`, `rename`, `move_to`, `delete`, `toggle_primary`, `validate`, `health`, `health_summary`, `refresh_token`, `analytics`, `communities`, `sync_communities`, `search_communities`, `add_community`, `remove_community`, `create_telegram_connect_code`, `telegram_connect_status`, `telegram_bot_commands`, `set_telegram_bot_commands`, `delete_telegram_bot_commands`, `slack_channels`, `slack_members`, `slack_identity`, `update_slack_identity`, `ice_breakers`, `set_ice_breakers`, `delete_ice_breakers`, `persistent_menu`, `set_persistent_menu`, `delete_persistent_menu`, `greeting`, `set_greeting`, `delete_greeting`, `webhook_subscription`, `resubscribe_webhook`, `discord_channels`, `switch_discord_channel`, `discord_identity`, `update_discord_identity`, `discord_pins`, `delete_discord_message`, `pin_discord_message`, `unpin_discord_message`, `crosspost_discord_message`, `create_discord_thread`, `send_discord_dm`, `discord_events`, `discord_event`, `create_discord_event`, `update_discord_event`, `delete_discord_event`, `discord_members`, `discord_member`, `discord_roles`, `create_discord_role`, `update_discord_role`, `delete_discord_role`, `add_discord_member_role`, `remove_discord_member_role`, `platform_metrics` |
 | `account_groups()` | `list`, `get`, `create`, `update`, `delete`, `set_members` |
 | `workspaces()` | `list`, `get`, `create`, `update`, `delete`, `analytics` |
@@ -90,7 +90,7 @@ workspace answers `403`.
 | `webhooks()` | `list`, `create`, `update`, `delete`, `test` |
 | `automations()` | `list`, `get`, `create`, `update`, `delete`, `toggle`, `runs`, `get_run`, `stats`, `trigger` |
 | `analytics()` | `overview`, `time_series`, `top_posts`, `labels`, `posts_table`, `posting_streak`, `demographics`, `collect`, `decay`, `frequency`, `timeline`, `changes`, `collect_post`, `native_posts` |
-| `media()` | `list`, `upload`, `presign`, `complete`, `upload_direct`, `delete` |
+| `media()` | `list`, `limits`, `upload`, `presign`, `complete`, `upload_direct`, `upload_direct_with`, `delete` |
 | `contacts()` | `list`, `get`, `create`, `update`, `delete`, `conversations`, `import`, `list_fields`, `create_field`, `update_field`, `delete_field`, `conversation_analytics` |
 | `broadcasts()` | `list`, `get`, `create`, `update`, `delete`, `send`, `cancel`, `recipients` |
 | `sequences()` | `list`, `get`, `create`, `update`, `delete`, `enroll`, `unenroll`, `enrollments` |
@@ -245,9 +245,13 @@ client.posts().create(&CreatePost::new(workspace_id, [block])).await?;
 
 Larger files can skip the API and go straight to storage. `upload_direct` reserves a slot with
 `presign`, PUTs the bytes to the returned url with the returned headers and no API key, then calls
-`complete` to land the file in the library. It needs no Cargo feature.
+`complete` to land the file in the library. It needs no Cargo feature. `upload_direct_with` takes
+the full `PresignUpload` (folder, origin, brand role, brand voice, person consent) and a
+`FileSource`; a path is streamed from disk, so a 5 GB video never sits in memory.
 
 ```rust,no_run
+use fopost::models::{BrandRole, FileSource, PresignUpload};
+
 # async fn run(client: fopost::Client, workspace_id: &str) -> Result<(), fopost::Error> {
 let bytes = std::fs::read("clip.mp4").unwrap();
 let uploaded = client
@@ -255,6 +259,59 @@ let uploaded = client
     .upload_direct(workspace_id, "clip.mp4", "video/mp4", bytes)
     .await?;
 println!("{}", uploaded.url);
+
+let input = PresignUpload::new(workspace_id, "logo.png", "image/png", 0).brand_role(BrandRole::Logo);
+let logo = client
+    .media()
+    .upload_direct_with(input, FileSource::Path("logo.png".into()))
+    .await?;
+println!("{}", logo.url);
+# Ok(()) }
+```
+
+### Files on posts
+
+`create_with_files` and `update_with_files` take up to five `MediaFile`s and attach them to the
+post's first content block. Files at or under the account's multipart ceiling travel in the same
+request; bigger ones are uploaded directly and attached by url. The post that comes back is the
+same either way. Both need the `multipart` feature.
+
+```rust,no_run
+use fopost::models::{CreatePost, MediaFile};
+
+# async fn run(client: fopost::Client, workspace_id: &str) -> Result<(), fopost::Error> {
+let post = client
+    .posts()
+    .create_with_files(
+        &CreatePost::text(workspace_id, "Ship it").accounts(["acc_1"]),
+        vec![MediaFile::from_path("clip.mp4", "video/mp4")],
+    )
+    .await?;
+println!("{}", post.id);
+# Ok(()) }
+```
+
+### Upload limits
+
+`limits` says what the account may upload: `max_file_bytes` is the ceiling by any route (it grows
+with connected accounts, or with the Large Uploads add-on), `multipart_max_file_bytes` is what a
+single multipart request carries per file, and `next_tier` is what more accounts would unlock. A
+file over the ceiling is a 413 `file_too_large`; `ApiError::max_file_bytes()` reads the limit it
+broke.
+
+```rust,no_run
+# async fn run(client: fopost::Client, workspace_id: &str) -> Result<(), fopost::Error> {
+let limits = client.media().limits(Some(workspace_id)).await?;
+println!("{} bytes per file", limits.max_file_bytes);
+
+match client.media().upload_direct(workspace_id, "huge.mp4", "video/mp4", vec![]).await {
+    Err(fopost::Error::Api(api)) if api.is_file_too_large() => {
+        println!("too big, the ceiling is {:?}", api.max_file_bytes());
+    }
+    other => {
+        other?;
+    }
+}
 # Ok(()) }
 ```
 
