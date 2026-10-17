@@ -7,7 +7,7 @@ use crate::http::{HttpClient, DEFAULT_BASE_URL, USER_AGENT};
 use crate::resources::{
     AccountGroups, Accounts, Activity, Ads, Analytics, Automations, Blog, Broadcasts, Contacts,
     GoogleAds, GoogleBusiness, Inbox, Knowledge, Labels, Media, Posts, Sequences, Validate,
-    Webhooks, Workspaces,
+    Webhooks, Whatsapp, Workspaces,
 };
 
 /// The environment variable the key is read from by [`Client::from_env`].
@@ -165,6 +165,12 @@ impl Client {
     /// Manage a connected Google Business Profile location.
     pub fn google_business(&self) -> GoogleBusiness<'_> {
         GoogleBusiness { http: &self.http }
+    }
+
+    /// WhatsApp Business: templates, flows, groups, blocking and commerce on a
+    /// number the customer owns.
+    pub fn whatsapp(&self) -> Whatsapp<'_> {
+        Whatsapp { http: &self.http }
     }
 
     /// Call an endpoint the SDK does not wrap yet, with the auth, retries, and

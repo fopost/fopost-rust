@@ -27,6 +27,7 @@ pub mod media;
 pub mod posts;
 pub mod validate;
 pub mod webhooks;
+pub mod whatsapp;
 pub mod workspaces;
 
 pub use account_groups::*;
@@ -47,4 +48,5 @@ pub use media::*;
 pub use posts::*;
 pub use validate::*;
 pub use webhooks::*;
+pub use whatsapp::*;
 pub use workspaces::*;

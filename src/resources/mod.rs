@@ -18,6 +18,7 @@ pub mod media;
 pub mod posts;
 pub mod validate;
 pub mod webhooks;
+pub mod whatsapp;
 pub mod workspaces;
 
 pub use account_groups::AccountGroups;
@@ -38,4 +39,5 @@ pub use media::Media;
 pub use posts::Posts;
 pub use validate::Validate;
 pub use webhooks::Webhooks;
+pub use whatsapp::Whatsapp;
 pub use workspaces::Workspaces;

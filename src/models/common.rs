@@ -97,6 +97,7 @@ string_enum! {
         Nostr => "nostr",
         Whop => "whop",
         Skool => "skool",
+        Whatsapp => "whatsapp",
     }
 }
 
