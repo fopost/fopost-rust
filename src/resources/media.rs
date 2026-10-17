@@ -3,8 +3,13 @@
 use reqwest::Method;
 
 use crate::error::{ApiError, Error, Result};
-use crate::http::{Envelope, HttpClient, Query};
-use crate::models::{MediaLibraryItem, PresignUpload, PresignedUpload, UploadedMedia};
+use crate::http::{push_opt, Envelope, HttpClient, Query};
+use crate::models::{
+    FileSource, MediaLibraryItem, PresignUpload, PresignedUpload, UploadLimits, UploadedMedia,
+};
+
+/// What a multipart request carries per file when `limits` cannot be read.
+pub const DEFAULT_MULTIPART_MAX_FILE_BYTES: u64 = 100 * 1024 * 1024;
 
 /// The media library.
 #[derive(Debug, Clone)]
@@ -23,8 +28,21 @@ impl Media<'_> {
         Ok(body.data)
     }
 
-    /// Reserve a direct-upload slot. PUT the bytes to `upload_url` with the returned
-    /// headers and a `Content-Length` equal to `size`, then call [`Self::complete`].
+    /// What this account may upload: the per-file ceiling by any route, the
+    /// multipart ceiling, and the next tier more connected accounts would unlock.
+    pub async fn limits(&self, workspace_id: Option<&str>) -> Result<UploadLimits> {
+        let mut query: Query = Vec::new();
+        push_opt(&mut query, "workspaceId", workspace_id);
+        let body: Envelope<UploadLimits> = self
+            .http
+            .send::<_, ()>(Method::GET, "/media/limits", Some(query), None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Reserve a direct-upload slot for a file of up to 5 GB. PUT the bytes to
+    /// `upload_url` with the returned headers and a `Content-Length` equal to
+    /// `size`, then call [`Self::complete`].
     pub async fn presign(&self, input: &PresignUpload) -> Result<PresignedUpload> {
         let body: Envelope<PresignedUpload> = self
             .http
@@ -56,24 +74,42 @@ impl Media<'_> {
         mime_type: &str,
         data: Vec<u8>,
     ) -> Result<UploadedMedia> {
-        let presigned = self
-            .presign(&PresignUpload::new(
-                workspace_id,
-                filename,
-                mime_type,
-                data.len() as u64,
-            ))
-            .await?;
+        let input = PresignUpload::new(workspace_id, filename, mime_type, 0);
+        self.upload_direct_with(input, FileSource::Bytes(data))
+            .await
+    }
+
+    /// [`Self::upload_direct`] with every presign option. `input.size` is replaced by
+    /// the source's real length, and a path is streamed rather than read into memory.
+    pub async fn upload_direct_with(
+        &self,
+        mut input: PresignUpload,
+        source: FileSource,
+    ) -> Result<UploadedMedia> {
+        input.size = source.len().await.map_err(|err| {
+            Error::Config(format!("fopost: could not read {} — {err}", input.filename))
+        })?;
+        let presigned = self.presign(&input).await?;
 
         // The slot is authorised by its url, so the API key stays home.
         let mut request = self
             .http
             .inner()
-            .request(Method::PUT, &presigned.upload_url);
+            .request(Method::PUT, &presigned.upload_url)
+            .header("Content-Length", input.size);
         for (name, value) in &presigned.headers {
             request = request.header(name, value);
         }
-        let response = request.body(data).send().await?;
+        let body = match source {
+            FileSource::Bytes(bytes) => reqwest::Body::from(bytes),
+            FileSource::Path(path) => {
+                let file = tokio::fs::File::open(&path).await.map_err(|err| {
+                    Error::Config(format!("fopost: could not open {} — {err}", path.display()))
+                })?;
+                reqwest::Body::wrap_stream(tokio_util::io::ReaderStream::new(file))
+            }
+        };
+        let response = request.body(body).send().await?;
         let status = response.status();
         if !status.is_success() {
             let text = response.text().await?;

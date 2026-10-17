@@ -76,6 +76,7 @@ string_enum! {
         Slack => "slack",
         Reddit => "reddit",
         Pinterest => "pinterest",
+        Snapchat => "snapchat",
         Tumblr => "tumblr",
         Dribbble => "dribbble",
         Mewe => "mewe",
@@ -96,6 +97,7 @@ string_enum! {
         Nostr => "nostr",
         Whop => "whop",
         Skool => "skool",
+        Whatsapp => "whatsapp",
     }
 }
 

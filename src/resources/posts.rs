@@ -235,6 +235,137 @@ impl Posts<'_> {
         crate::http::decode(value)
     }
 
+    /// Create a post with up to five files attached to its first content block.
+    ///
+    /// Files at or under the account's multipart ceiling travel in the same request;
+    /// bigger ones are uploaded directly to the library first and attached by url.
+    /// The post that comes back is the same either way.
+    pub async fn create_with_files(
+        &self,
+        post: &CreatePost,
+        files: Vec<crate::models::MediaFile>,
+    ) -> Result<Post> {
+        if files.is_empty() {
+            return self.create(post).await;
+        }
+        if self
+            .fits_multipart(Some(&post.workspace_id), &files)
+            .await?
+        {
+            return self
+                .send_with_files(Method::POST, "/posts", post, files)
+                .await;
+        }
+        let mut post = post.clone();
+        let items = self.upload_all(&post.workspace_id, files).await?;
+        attach(&mut post.content, items);
+        self.create(&post).await
+    }
+
+    /// Update a post, attaching files to its first content block the way
+    /// [`Posts::create_with_files`] does. Without `content` on the body, the files
+    /// are appended to the block the post already has.
+    pub async fn update_with_files(
+        &self,
+        id: &str,
+        changes: &UpdatePost,
+        files: Vec<crate::models::MediaFile>,
+    ) -> Result<Post> {
+        if files.is_empty() {
+            return self.update(id, changes).await;
+        }
+        if self.fits_multipart(None, &files).await? {
+            return self
+                .send_with_files(Method::PUT, &format!("/posts/{id}"), changes, files)
+                .await;
+        }
+        let current = self.get(id).await?;
+        let mut changes = changes.clone();
+        let mut content = changes.content.take().unwrap_or(current.content);
+        let items = self.upload_all(&current.workspace_id, files).await?;
+        attach(&mut content, items);
+        changes.content = Some(content);
+        self.update(id, &changes).await
+    }
+
+    /// Whether every file is at or under the multipart ceiling. `limits` is read
+    /// once; when it cannot be, the documented default applies.
+    async fn fits_multipart(
+        &self,
+        workspace_id: Option<&str>,
+        files: &[crate::models::MediaFile],
+    ) -> Result<bool> {
+        let ceiling = crate::resources::media::Media { http: self.http }
+            .limits(workspace_id)
+            .await
+            .map(|limits| limits.multipart_max_file_bytes)
+            .unwrap_or(crate::resources::media::DEFAULT_MULTIPART_MAX_FILE_BYTES);
+        for file in files {
+            if file_len(file).await? > ceiling {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    async fn send_with_files<B: serde::Serialize>(
+        &self,
+        method: Method,
+        path: &str,
+        body: &B,
+        files: Vec<crate::models::MediaFile>,
+    ) -> Result<Post> {
+        let json = serde_json::to_string(body).map_err(|source| crate::error::Error::Decode {
+            source,
+            body: String::new(),
+        })?;
+        let mut form = reqwest::multipart::Form::new().text("post", json);
+        for file in files {
+            let len = file_len(&file).await?;
+            let body = match file.source {
+                crate::models::FileSource::Bytes(bytes) => reqwest::Body::from(bytes),
+                crate::models::FileSource::Path(path) => {
+                    let opened = tokio::fs::File::open(&path).await.map_err(|err| {
+                        crate::error::Error::Config(format!(
+                            "fopost: could not open {} — {err}",
+                            path.display()
+                        ))
+                    })?;
+                    reqwest::Body::wrap_stream(tokio_util::io::ReaderStream::new(opened))
+                }
+            };
+            let part = reqwest::multipart::Part::stream_with_length(body, len)
+                .file_name(file.filename)
+                .mime_str(&file.mime_type)
+                .map_err(crate::error::Error::Transport)?;
+            form = form.part("files", part);
+        }
+        let value = self
+            .http
+            .send_request(self.http.raw_request(method, path)?.multipart(form))
+            .await?;
+        crate::http::decode(value)
+    }
+
+    async fn upload_all(
+        &self,
+        workspace_id: &str,
+        files: Vec<crate::models::MediaFile>,
+    ) -> Result<Vec<crate::models::MediaItem>> {
+        let media = crate::resources::media::Media { http: self.http };
+        let mut items = Vec::with_capacity(files.len());
+        for file in files {
+            let media_type = file.media_type();
+            let input =
+                crate::models::PresignUpload::new(workspace_id, file.filename, file.mime_type, 0);
+            let uploaded = media.upload_direct_with(input, file.source).await?;
+            let mut item = crate::models::MediaItem::new(media_type, uploaded.name, uploaded.url);
+            item.size = uploaded.size.map(|size| size as f64);
+            items.push(item);
+        }
+        Ok(items)
+    }
+
     async fn send_csv(
         &self,
         path: &str,
@@ -253,4 +384,25 @@ impl Posts<'_> {
             .send_request(self.http.raw_request(Method::POST, path)?.multipart(form))
             .await
     }
+}
+
+#[cfg(feature = "multipart")]
+async fn file_len(file: &crate::models::MediaFile) -> Result<u64> {
+    file.source.len().await.map_err(|err| {
+        crate::error::Error::Config(format!("fopost: could not read {} — {err}", file.filename))
+    })
+}
+
+/// Put the items on the first block, adding one when the post has none.
+#[cfg(feature = "multipart")]
+fn attach(content: &mut Vec<crate::models::ContentBlock>, items: Vec<crate::models::MediaItem>) {
+    if content.is_empty() {
+        content.push(crate::models::ContentBlock {
+            id: None,
+            text: None,
+            media: Vec::new(),
+            position: None,
+        });
+    }
+    content[0].media.extend(items);
 }
