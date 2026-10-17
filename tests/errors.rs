@@ -177,3 +177,41 @@ async fn a_success_body_of_the_wrong_shape_is_a_decode_error_that_keeps_the_body
         other => panic!("expected a decode error, got {other}"),
     }
 }
+
+#[tokio::test]
+async fn a_413_names_the_ceiling_the_file_broke() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/media/presign"))
+        .respond_with(ResponseTemplate::new(413).set_body_json(serde_json::json!({
+            "error": "file_too_large",
+            "message": "This file is larger than your account allows",
+            "max_file_bytes": 104857600u64,
+            "file_bytes": 5368709120u64,
+            "upgrade_url": "https://fopost.com/dashboard/settings/billing"
+        })))
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let input = fopost::models::PresignUpload::new("ws_1", "clip.mp4", "video/mp4", 5_368_709_120);
+    let err = client.media().presign(&input).await.unwrap_err();
+
+    assert_eq!(err.status(), Some(413));
+    assert_eq!(err.code(), Some("file_too_large"));
+    match err {
+        Error::Api(api) => {
+            assert!(api.is_file_too_large());
+            assert_eq!(api.max_file_bytes(), Some(104_857_600));
+            assert_eq!(
+                api.body.as_ref().unwrap()["file_bytes"].as_u64(),
+                Some(5_368_709_120)
+            );
+            assert_eq!(
+                api.upgrade_url(),
+                Some("https://fopost.com/dashboard/settings/billing")
+            );
+        }
+        other => panic!("expected an api error, got {other}"),
+    }
+}

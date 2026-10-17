@@ -28,7 +28,9 @@
 //! dashboard under **Settings → API Keys** and carry only the scopes granted at
 //! creation: `posts` (which covers publishing, deliveries, and media),
 //! `workspaces`, `accounts`, `labels`, `webhooks`, `analytics`, `automations`,
-//! `inbox`, and `ads` (whose four spending calls also need `publish`).
+//! `inbox` (which also covers the knowledge base), `ads` (whose four
+//! spending calls also need `publish`), and `ai` for the blog calls that
+//! spend credits.
 //! A key may also be bound to one workspace, in which case naming any other
 //! workspace answers `403`.
 //!
@@ -73,12 +75,17 @@ pub mod error;
 pub mod http;
 pub mod models;
 pub mod resources;
+pub mod webhook;
 
 mod client;
 
 pub use client::{Client, ClientBuilder, API_KEY_ENV};
 pub use error::{ApiError, Error, Result};
 pub use http::DEFAULT_BASE_URL;
+pub use webhook::{
+    sign_webhook, sign_webhook_at, verify_webhook, verify_webhook_at, WebhookEnvelope,
+    WebhookError, WebhookSignature, WEBHOOK_TOLERANCE,
+};
 
 /// Alias for people arriving from the TypeScript SDK, where the class is `FoPost`.
 pub type FoPost = Client;
