@@ -115,9 +115,9 @@ inbox actions that act on the platform (`edit_comment`, `like`/`unlike`, `pin`/`
 our own reply), and a boost
 or ad starts paused unless `paused` is `false`; keep both in the doc comments.
 
-`blog()` covers the `Blog` tag: settings (`posts`), keywords (`posts`, `plan_keywords`
-is `ai`) and articles (`request_article`/`regenerate_article` are `ai`, `publish_article`
-is `publish`). Every wire field is camelCase; `workspaceId` is a query parameter on the
+`blog()` covers the `Blog` tag: settings (`posts`), keywords (`posts`, `suggest_seeds`
+and `plan_keywords` are `ai`) and articles (`request_article`/`regenerate_article` are
+`ai`, `submit_article` is `posts`, `publish_article` is `publish`). Every wire field is camelCase; `workspaceId` is a query parameter on the
 `{id}` routes and a body field on the collection routes (`InWorkspace` flattens it beside
 the payload). `update_settings` decodes the whole `{data, websiteSecret}` body as
 `BlogSettingsUpdated` because the secret sits outside the envelope. `BlogArticleFull`

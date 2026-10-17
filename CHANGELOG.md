@@ -6,6 +6,15 @@ All notable changes to the `fopost` crate are documented here.
 
 ### Added
 
+- `blog().suggest_seeds(workspace_id, &SuggestBlogSeeds)` suggests about 10 search terms
+  from the blog goal and topics (needs `ai`, 402 on an empty balance), and
+  `blog().submit_article` moves a draft, failed or rejected article to `in_review` (needs
+  `posts`, 409 otherwise).
+- `BlogSettings` gains `goal` (`BlogGoal`), `focus_topics`, `avoid_topics` and `plan_run`
+  (`BlogPlanRun` with a `BlogPlanRunStatus`); `UpdateBlogSettings` gains `goal`,
+  `focus_topics` and `avoid_topics`. `BlogKeyword::fit_reason` says why a keyword serves the
+  goal.
+- `BlogArticleStatus::InReview`.
 - `client.blog()` wraps the Blog tag: settings and the website secret, keyword planning,
   and the article lifecycle (`request_article`, `get_article`, `update_article`,
   `regenerate_article`, `publish_article`, `reject_article`, `delete_article`).
@@ -28,4 +37,16 @@ All notable changes to the `fopost` crate are documented here.
 
 ### Changed
 
+- `blog().plan_keywords` no longer fills the calendar: results land as `suggested`
+  keywords, and setting one to `planned` with `update_keyword` picks it and gives it the
+  next free date.
+- `blog().publish_article` and a `publish_at` on `update_article` need an article in
+  review (or already scheduled or failed); a draft answers 409 until it is submitted.
+- `BlogSettings::review_hold_days` is now the number of days before its planned date that
+  a picked keyword starts being written.
 - Direct upload no longer has a 50 MB ceiling; the account's limit applies.
+
+### Removed
+
+- **Breaking:** `BlogSettings::auto_publish`, `UpdateBlogSettings::auto_publish` and its
+  builder method. Every article now goes through `submit_article` before it publishes.
