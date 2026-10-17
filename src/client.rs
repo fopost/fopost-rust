@@ -5,9 +5,9 @@ use std::time::Duration;
 use crate::error::{Error, Result};
 use crate::http::{HttpClient, DEFAULT_BASE_URL, USER_AGENT};
 use crate::resources::{
-    AccountGroups, Accounts, Activity, Ads, Analytics, Automations, Blog, Broadcasts, Contacts,
-    GoogleAds, GoogleBusiness, Inbox, Knowledge, Labels, Media, Posts, Sequences, Validate,
-    Webhooks, Whatsapp, Workspaces,
+    AccountGroups, Accounts, Activity, Ads, Analytics, Automations, Blog, Blogs, Broadcasts,
+    Contacts, GoogleAds, GoogleBusiness, Inbox, Knowledge, Labels, Media, Posts, Sequences,
+    Validate, Webhooks, Whatsapp, Workspaces,
 };
 
 /// The environment variable the key is read from by [`Client::from_env`].
@@ -171,6 +171,11 @@ impl Client {
     /// number the customer owns.
     pub fn whatsapp(&self) -> Whatsapp<'_> {
         Whatsapp { http: &self.http }
+    }
+
+    /// Blogs, articles and products that already live on a connected site.
+    pub fn blogs(&self) -> Blogs<'_> {
+        Blogs { http: &self.http }
     }
 
     /// Call an endpoint the SDK does not wrap yet, with the auth, retries, and
