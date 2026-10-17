@@ -2,11 +2,12 @@
 //! website.
 //!
 //! An article goes to a website; a post goes to a social network. Reading,
-//! settings and keyword edits need the `posts` scope. Planning keywords,
-//! requesting an article and regenerating one spend credits and need `ai`; a
-//! spent balance answers 402 with an `upgrade_url`. Publishing needs `publish`
-//! and answers 409 `no_target` when the settings name no target; a patch,
-//! regenerate, publish or reject on an article in the wrong state answers 409
+//! settings, keyword edits and submitting an article need the `posts` scope.
+//! Suggesting search terms, planning keywords, requesting an article and
+//! regenerating one spend credits and need `ai`; a spent balance answers 402
+//! with an `upgrade_url`. Publishing needs `publish` and answers 409
+//! `no_target` when the settings name no target; a patch, regenerate, submit,
+//! publish or reject on an article in the wrong state answers 409
 //! `invalid_state`.
 
 use reqwest::Method;
@@ -15,9 +16,10 @@ use serde::Serialize;
 use crate::error::Result;
 use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
-    AddBlogKeyword, BlogArticle, BlogArticleFull, BlogKeyword, BlogSettings, BlogSettingsUpdated,
-    BlogWebsiteSecret, BlogWebsiteTest, ListBlogArticles, ListBlogKeywords, PlanBlogKeywords,
-    RequestBlogArticle, UpdateBlogArticle, UpdateBlogKeyword, UpdateBlogSettings,
+    AddBlogKeyword, BlogArticle, BlogArticleFull, BlogKeyword, BlogSeedSuggestions, BlogSettings,
+    BlogSettingsUpdated, BlogWebsiteSecret, BlogWebsiteTest, ListBlogArticles, ListBlogKeywords,
+    PlanBlogKeywords, RequestBlogArticle, SuggestBlogSeeds, UpdateBlogArticle, UpdateBlogKeyword,
+    UpdateBlogSettings,
 };
 
 /// The blog.
@@ -50,8 +52,8 @@ fn status_list<S: ToString>(statuses: &[S]) -> Option<String> {
 }
 
 impl Blog<'_> {
-    /// Where articles publish, how often they are planned and how long a
-    /// draft waits for review.
+    /// Where articles publish, what the blog is for, how often it is planned
+    /// and the last keyword research run.
     pub async fn get_settings(&self, workspace_id: &str) -> Result<BlogSettings> {
         let body: Envelope<BlogSettings> = self
             .http
@@ -132,8 +134,33 @@ impl Blog<'_> {
         Ok(body.data)
     }
 
-    /// Queue a planning run that grows the keyword plan. Needs the `ai`
-    /// scope; a spent balance answers 402.
+    /// About 10 search terms from the blog goal and topics, to edit before
+    /// [`Blog::plan_keywords`]. Pass the current seeds to refine them and a
+    /// prompt to steer. Needs the `ai` scope; a spent balance answers 402.
+    pub async fn suggest_seeds(
+        &self,
+        workspace_id: &str,
+        params: &SuggestBlogSeeds,
+    ) -> Result<Vec<String>> {
+        let body: Envelope<BlogSeedSuggestions> = self
+            .http
+            .send(
+                Method::POST,
+                "/blog/keywords/suggest",
+                None,
+                Some(&InWorkspace {
+                    workspace_id,
+                    body: params,
+                }),
+            )
+            .await?;
+        Ok(body.data.seeds)
+    }
+
+    /// Queue a research run. Results land as `suggested` keywords and never
+    /// fill the calendar; set one to `planned` with [`Blog::update_keyword`]
+    /// to pick it. Follow the run in `plan_run` on [`Blog::get_settings`].
+    /// Needs the `ai` scope; a spent balance answers 402.
     pub async fn plan_keywords(&self, workspace_id: &str, params: &PlanBlogKeywords) -> Result<()> {
         self.http
             .send::<serde_json::Value, _>(
@@ -170,7 +197,8 @@ impl Blog<'_> {
         Ok(body.data)
     }
 
-    /// Change a keyword's status or planned date.
+    /// Change a keyword's status or planned date. Setting it to `planned`
+    /// picks it and gives it the next free date.
     pub async fn update_keyword(
         &self,
         workspace_id: &str,
@@ -255,8 +283,9 @@ impl Blog<'_> {
         Ok(body.data)
     }
 
-    /// Edit a draft. Only a draft or scheduled article can be edited; anything
-    /// else answers 409 `invalid_state`.
+    /// Edit an article. One still being written or already publishing answers
+    /// 409 `invalid_state`, as does a `publish_at` on a draft that was never
+    /// submitted with [`Blog::submit_article`].
     pub async fn update_article(
         &self,
         workspace_id: &str,
@@ -280,13 +309,21 @@ impl Blog<'_> {
         self.article_action(workspace_id, id, "regenerate").await
     }
 
-    /// Publish a draft to the configured target now. Needs the `publish`
-    /// scope; answers 409 `no_target` when the settings name no target.
+    /// Publish an article in review to the configured target now. Needs the
+    /// `publish` scope. A draft answers 409 until it is submitted with
+    /// [`Blog::submit_article`]; 409 `no_target` means the settings name no
+    /// target.
     pub async fn publish_article(&self, workspace_id: &str, id: &str) -> Result<BlogArticle> {
         self.article_action(workspace_id, id, "publish").await
     }
 
-    /// Reject a draft so it never auto-publishes.
+    /// Move a draft, failed or rejected article to `in_review`. Any other
+    /// state answers 409.
+    pub async fn submit_article(&self, workspace_id: &str, id: &str) -> Result<BlogArticle> {
+        self.article_action(workspace_id, id, "submit").await
+    }
+
+    /// Reject an article so it never publishes.
     pub async fn reject_article(&self, workspace_id: &str, id: &str) -> Result<BlogArticle> {
         self.article_action(workspace_id, id, "reject").await
     }

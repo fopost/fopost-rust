@@ -5,9 +5,9 @@ mod common;
 
 use common::client;
 use fopost::models::{
-    AddBlogKeyword, BlogArticleStatus, BlogKeywordStatus, BlogTargetKind, ListBlogArticles,
-    ListBlogKeywords, PlanBlogKeywords, RequestBlogArticle, UpdateBlogArticle, UpdateBlogKeyword,
-    UpdateBlogSettings,
+    AddBlogKeyword, BlogArticleStatus, BlogGoal, BlogKeywordStatus, BlogPlanRunStatus,
+    BlogTargetKind, ListBlogArticles, ListBlogKeywords, PlanBlogKeywords, RequestBlogArticle,
+    SuggestBlogSeeds, UpdateBlogArticle, UpdateBlogKeyword, UpdateBlogSettings,
 };
 use serde_json::json;
 use wiremock::matchers::{body_json, method, path, query_param};
@@ -18,11 +18,13 @@ fn settings_fixture() -> serde_json::Value {
         "siteUrl": "https://yourbrand.com",
         "topic": "running shoes",
         "audience": null,
+        "goal": "leads",
+        "focusTopics": "trail running gear",
+        "avoidTopics": "competitor brands",
         "language": "en",
         "locationCode": 2840,
         "cadencePerWeek": 2,
         "reviewHoldDays": 3,
-        "autoPublish": false,
         "imageTier": "standard",
         "inBodyImages": 1,
         "minWords": 800,
@@ -33,6 +35,12 @@ fn settings_fixture() -> serde_json::Value {
         "targetPlatform": null,
         "websiteUrl": "https://yourbrand.com/api/fopost",
         "hasWebsiteSecret": true,
+        "planRun": {
+            "status": "done",
+            "error": null,
+            "added": 12,
+            "finishedAt": "2026-10-01T10:05:00.000Z"
+        },
         "keywordDataAvailable": true,
         "updatedAt": "2026-10-01T10:00:00.000Z"
     })
@@ -49,6 +57,7 @@ fn keyword_fixture() -> serde_json::Value {
         "source": "provider",
         "status": "planned",
         "plannedFor": "2026-10-20",
+        "fitReason": "Buyers compare shoes before they sign up.",
         "createdAt": "2026-10-01T10:00:00.000Z"
     })
 }
@@ -95,7 +104,10 @@ async fn settings_round_trip() {
             "workspaceId": "ws_1",
             "websiteUrl": "https://yourbrand.com/api/fopost",
             "targetKind": "website",
-            "brandVoiceId": null
+            "brandVoiceId": null,
+            "goal": "leads",
+            "focusTopics": "trail running gear",
+            "avoidTopics": null
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "data": settings_fixture(),
@@ -131,6 +143,12 @@ async fn settings_round_trip() {
     assert_eq!(settings.target_kind, Some(BlogTargetKind::Website));
     assert_eq!(settings.cadence_per_week, 2);
     assert!(settings.has_website_secret);
+    assert_eq!(settings.goal, Some(BlogGoal::Leads));
+    assert_eq!(settings.focus_topics.as_deref(), Some("trail running gear"));
+    assert_eq!(settings.avoid_topics.as_deref(), Some("competitor brands"));
+    let run = settings.plan_run.as_ref().unwrap();
+    assert_eq!(run.status, BlogPlanRunStatus::Done);
+    assert_eq!(run.added, Some(12));
 
     let updated = blog
         .update_settings(
@@ -138,7 +156,10 @@ async fn settings_round_trip() {
             &UpdateBlogSettings::new()
                 .website_url(Some("https://yourbrand.com/api/fopost"))
                 .target_kind(Some(BlogTargetKind::Website))
-                .brand_voice_id(None::<String>),
+                .brand_voice_id(None::<String>)
+                .goal(Some(BlogGoal::Leads))
+                .focus_topics(Some("trail running gear"))
+                .avoid_topics(None::<String>),
         )
         .await
         .unwrap();
@@ -227,6 +248,10 @@ async fn keywords_round_trip() {
     assert_eq!(keywords.len(), 1);
     assert_eq!(keywords[0].status, BlogKeywordStatus::Planned);
     assert_eq!(keywords[0].search_volume, Some(1200));
+    assert_eq!(
+        keywords[0].fit_reason.as_deref(),
+        Some("Buyers compare shoes before they sign up.")
+    );
 
     blog.plan_keywords("ws_1", &PlanBlogKeywords::new().seeds(["running"]))
         .await
@@ -252,6 +277,92 @@ async fn keywords_round_trip() {
     .unwrap();
 
     blog.delete_keyword("ws_1", "kw_1").await.unwrap();
+}
+
+#[tokio::test]
+async fn suggest_seeds_sends_seeds_and_prompt() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/blog/keywords/suggest"))
+        .and(body_json(json!({
+            "workspaceId": "ws_1",
+            "seeds": ["trail running"],
+            "prompt": "Beginners, not racers"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "seeds": ["trail running shoes", "waterproof trail shoes"] }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/blog/keywords/suggest"))
+        .and(body_json(json!({ "workspaceId": "ws_2" })))
+        .respond_with(ResponseTemplate::new(402).set_body_json(json!({
+            "error": "insufficient_credits",
+            "message": "Balance is empty"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+
+    let seeds = client
+        .blog()
+        .suggest_seeds(
+            "ws_1",
+            &SuggestBlogSeeds::new()
+                .seeds(["trail running"])
+                .prompt("Beginners, not racers"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(seeds, vec!["trail running shoes", "waterproof trail shoes"]);
+
+    let err = client
+        .blog()
+        .suggest_seeds("ws_2", &SuggestBlogSeeds::new())
+        .await
+        .unwrap_err();
+    assert_eq!(err.status(), Some(402));
+}
+
+#[tokio::test]
+async fn submit_article_moves_it_to_review() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/blog/articles/art_1/submit"))
+        .and(query_param("workspaceId", "ws_1"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "data": article_fixture("in_review") })),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/blog/articles/art_2/submit"))
+        .respond_with(ResponseTemplate::new(409).set_body_json(json!({
+            "error": "invalid_state",
+            "message": "Only a draft can be submitted for approval"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+
+    let article = client.blog().submit_article("ws_1", "art_1").await.unwrap();
+    assert_eq!(article.status, BlogArticleStatus::InReview);
+
+    let err = client
+        .blog()
+        .submit_article("ws_1", "art_2")
+        .await
+        .unwrap_err();
+    assert_eq!(err.status(), Some(409));
+    assert_eq!(err.code(), Some("invalid_state"));
 }
 
 #[tokio::test]
