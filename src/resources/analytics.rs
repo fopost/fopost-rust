@@ -5,14 +5,30 @@ use reqwest::Method;
 use crate::error::Result;
 use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
-    AnalyticsOverview, AnalyticsQuery, Audience, CollectSummary, Demographics, LabelAnalytics,
-    PostsTable, StreakDay, TimeSeries, TopPost,
+    AnalyticsOverview, AnalyticsQuery, Audience, CollectPostResult, CollectSummary, ContentDecay,
+    Demographics, InboxPage, LabelAnalytics, MetricChangePage, MetricChangesQuery, NativePost,
+    NativePostsQuery, PostTimeline, PostingFrequency, PostsTable, StreakDay, TimeSeries, TopPost,
 };
 
 /// Reporting across every connected account.
 #[derive(Debug, Clone)]
 pub struct Analytics<'a> {
     pub(crate) http: &'a HttpClient,
+}
+
+/// Percent-encode one path segment. A post can be addressed by its permalink,
+/// which carries the slashes and colons that would otherwise split the path.
+fn encode_segment(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*byte as char)
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
 }
 
 fn base_query(params: &AnalyticsQuery) -> Query {
@@ -136,5 +152,97 @@ impl Analytics<'_> {
             .send::<_, ()>(Method::POST, "/analytics/collect", Some(query), None)
             .await?;
         Ok(body.data)
+    }
+
+    /// How long a post keeps earning: engagement grouped by the post's age at
+    /// the moment each reading was taken. `days` selects posts by publish
+    /// time, not reading time.
+    pub async fn decay(&self, params: &AnalyticsQuery) -> Result<ContentDecay> {
+        let body: Envelope<ContentDecay> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                "/analytics/decay",
+                Some(base_query(params)),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Whether posting more earned more: weekly cadence against what each
+    /// cadence earned per post.
+    pub async fn frequency(&self, params: &AnalyticsQuery) -> Result<PostingFrequency> {
+        let body: Envelope<PostingFrequency> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                "/analytics/frequency",
+                Some(base_query(params)),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Every reading held for one post, oldest first, with what moved between
+    /// them and one timeline per delivery. `id_or_permalink` is a FoPost post
+    /// id or the permalink of a post made natively on the network.
+    pub async fn timeline(&self, id_or_permalink: &str) -> Result<PostTimeline> {
+        let path = format!(
+            "/analytics/posts/{}/timeline",
+            encode_segment(id_or_permalink)
+        );
+        let body: Envelope<PostTimeline> = self
+            .http
+            .send::<_, ()>(Method::GET, &path, None, None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Readings recorded after `since`, oldest first, with a cursor to
+    /// continue. Poll it to mirror the metrics into your own store instead of
+    /// refetching the whole history.
+    pub async fn changes(&self, params: &MetricChangesQuery) -> Result<MetricChangePage> {
+        let mut query: Query = Vec::new();
+        push_opt(&mut query, "since", params.since.as_ref());
+        push_opt(&mut query, "limit", params.limit);
+        push_opt(&mut query, "workspace_id", params.workspace_id.as_ref());
+        push_opt(&mut query, "accountId", params.account_id.as_ref());
+        let body: Envelope<MetricChangePage> = self
+            .http
+            .send::<_, ()>(Method::GET, "/analytics/changes", Some(query), None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Re-read one post from the network now. Spends the same per-user budget
+    /// as [`collect`](Self::collect), so a burst answers 429.
+    pub async fn collect_post(&self, id_or_permalink: &str) -> Result<CollectPostResult> {
+        let path = format!(
+            "/posts/{}/analytics/collect",
+            encode_segment(id_or_permalink)
+        );
+        let body: Envelope<CollectPostResult> = self
+            .http
+            .send::<_, ()>(Method::POST, &path, None, None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Posts on the account that never went out through FoPost, newest first.
+    pub async fn native_posts(
+        &self,
+        account_id: &str,
+        params: &NativePostsQuery,
+    ) -> Result<InboxPage<NativePost>> {
+        let mut query: Query = Vec::new();
+        push_opt(&mut query, "page", params.page);
+        push_opt(&mut query, "per_page", params.per_page);
+        push_opt(&mut query, "days", params.days);
+        let path = format!("/accounts/{account_id}/native-posts");
+        self.http
+            .send::<_, ()>(Method::GET, &path, Some(query), None)
+            .await
     }
 }

@@ -11,9 +11,9 @@ use crate::error::Result;
 use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
     ApprovalDecision, InboxAccount, InboxApproval, InboxConversation, InboxConversationStarted,
-    InboxItem, InboxPage, InboxPlatform, InboxRefreshResult, InboxReply, InboxReplyResult,
-    InboxThread, ListInbox, ListInboxConversations, ListInboxThreads, MarkThreadRead,
-    StartInboxConversation, UpdateInboxItem,
+    InboxHandover, InboxItem, InboxPage, InboxPlatform, InboxRefreshResult, InboxReply,
+    InboxReplyResult, InboxThread, ListInbox, ListInboxConversations, ListInboxThreads,
+    MarkThreadRead, StartInboxConversation, UpdateInboxItem,
 };
 
 /// The inbox.
@@ -355,6 +355,39 @@ impl Inbox<'_> {
             )
             .await?;
         Ok(body.data.typing)
+    }
+
+    /// Pass a Messenger thread to another Meta app, or take it back when `app_id` is
+    /// `None`. Also needs the `publish` scope.
+    pub async fn handover(
+        &self,
+        conversation_id: &str,
+        account_id: &str,
+        app_id: Option<&str>,
+        metadata: Option<&str>,
+    ) -> Result<InboxHandover> {
+        #[derive(Serialize)]
+        struct Handover<'a> {
+            account_id: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            app_id: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            metadata: Option<&'a str>,
+        }
+        let body: Envelope<InboxHandover> = self
+            .http
+            .send(
+                Method::POST,
+                &format!("/inbox/conversations/{conversation_id}/handover"),
+                None,
+                Some(&Handover {
+                    account_id,
+                    app_id,
+                    metadata,
+                }),
+            )
+            .await?;
+        Ok(body.data)
     }
 
     /// Replies an automation or the agent drafted that a person still has to send.

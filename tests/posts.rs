@@ -241,3 +241,239 @@ async fn cancel_always_sends_the_account_ids_field() {
     let result = client.posts().cancel("post_1", None).await.unwrap();
     assert_eq!(result.post_status.unwrap().as_str(), "cancelled");
 }
+
+#[cfg(feature = "multipart")]
+#[tokio::test]
+async fn small_files_ride_along_in_one_multipart_post() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/media/limits"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "maxFileBytes": 104857600u64, "multipartMaxFileBytes": 104857600u64 }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/posts"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(post_fixture()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/media/presign"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let post = client
+        .posts()
+        .create_with_files(
+            &CreatePost::text("ws_1", "Ship it"),
+            vec![fopost::models::MediaFile::new(
+                "card.png",
+                "image/png",
+                vec![1, 2, 3, 4],
+            )],
+        )
+        .await
+        .unwrap();
+    assert_eq!(post.id, "post_1");
+
+    let sent = server
+        .received_requests()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|r| r.url.path() == "/v1/posts")
+        .unwrap();
+    let content_type = sent.headers.get("content-type").unwrap().to_str().unwrap();
+    assert!(
+        content_type.starts_with("multipart/form-data"),
+        "{content_type}"
+    );
+    let body = String::from_utf8_lossy(&sent.body);
+    assert!(body.contains("name=\"post\""), "{body}");
+    assert!(body.contains("\"workspace_id\":\"ws_1\""), "{body}");
+    assert!(
+        body.contains("name=\"files\"; filename=\"card.png\""),
+        "{body}"
+    );
+}
+
+#[cfg(feature = "multipart")]
+#[tokio::test]
+async fn large_files_go_direct_and_land_on_the_first_block() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/media/limits"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "maxFileBytes": 5368709120u64, "multipartMaxFileBytes": 2 }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/media/presign"))
+        .and(body_json(serde_json::json!({
+            "workspaceId": "ws_1",
+            "filename": "clip.mp4",
+            "mimeType": "video/mp4",
+            "size": 4
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "uploadId": "up_1",
+                "uploadUrl": format!("{}/storage/up_1", server.uri()),
+                "headers": { "Content-Type": "video/mp4" }
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/storage/up_1"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/media/presign/up_1/complete"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "id": "med_1",
+                "type": "video",
+                "name": "clip.mp4",
+                "url": "https://api.fopost.com/v1/media/med_1/file",
+                "size": 4
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/posts"))
+        .and(body_json(serde_json::json!({
+            "workspace_id": "ws_1",
+            "accounts": [],
+            "content": [{
+                "text": "Ship it",
+                "media": [{
+                    "type": "video",
+                    "name": "clip.mp4",
+                    "url": "https://api.fopost.com/v1/media/med_1/file",
+                    "size": 4.0,
+                    "alt": null,
+                    "thumbnail": null
+                }]
+            }]
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(post_fixture()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let post = client
+        .posts()
+        .create_with_files(
+            &CreatePost::text("ws_1", "Ship it"),
+            vec![fopost::models::MediaFile::new(
+                "clip.mp4",
+                "video/mp4",
+                vec![1, 2, 3, 4],
+            )],
+        )
+        .await
+        .unwrap();
+    assert_eq!(post.id, "post_1");
+
+    let put = server
+        .received_requests()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|r| r.url.path() == "/storage/up_1")
+        .unwrap();
+    assert_eq!(put.body, vec![1, 2, 3, 4]);
+    assert!(put.headers.get("x-api-key").is_none());
+}
+
+#[cfg(feature = "multipart")]
+#[tokio::test]
+async fn update_without_content_appends_direct_uploads_to_the_existing_block() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/media/limits"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "maxFileBytes": 5368709120u64, "multipartMaxFileBytes": 1 }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/posts/post_1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(post_fixture()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/media/presign"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "uploadId": "up_2",
+                "uploadUrl": format!("{}/storage/up_2", server.uri()),
+                "headers": {}
+            }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/storage/up_2"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/media/presign/up_2/complete"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "type": "image", "name": "a.png", "url": "https://x/a.png" }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/v1/posts/post_1"))
+        .and(body_json(serde_json::json!({
+            "content": [{
+                "id": 1,
+                "text": "Hello from Rust",
+                "position": 0,
+                "media": [{
+                    "type": "image",
+                    "name": "a.png",
+                    "url": "https://x/a.png",
+                    "size": null,
+                    "alt": null,
+                    "thumbnail": null
+                }]
+            }]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(post_fixture()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    client
+        .posts()
+        .update_with_files(
+            "post_1",
+            &fopost::models::UpdatePost::new(),
+            vec![fopost::models::MediaFile::new(
+                "a.png",
+                "image/png",
+                vec![1, 2],
+            )],
+        )
+        .await
+        .unwrap();
+}
