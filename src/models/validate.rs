@@ -174,3 +174,21 @@ pub struct ValidateMediaResult {
     #[serde(rename = "type", default)]
     pub media_type: Option<String>,
 }
+
+/// What `GET /validate/subreddit` answers with.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SubredditCheck {
+    #[serde(default)]
+    pub subreddit: String,
+    #[serde(default)]
+    pub exists: bool,
+    #[serde(default)]
+    pub can_post: bool,
+    #[serde(default)]
+    pub over_18: bool,
+    #[serde(default)]
+    pub flair_enabled: bool,
+    /// True when the subreddit exists and takes a post from this account.
+    #[serde(default)]
+    pub ok: bool,
+}
