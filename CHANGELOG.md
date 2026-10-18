@@ -2,7 +2,33 @@
 
 All notable changes to the `fopost` crate are documented here.
 
-## 0.3.0 - 2026-10-18
+## 0.4.0 - 2026-10-18
+
+### Added
+
+- `client.queue()` wraps the posting queue: `slots`, `create_slot`, `update_slot`,
+  `delete_slot`, `next` and `preview`. `CreatePost::queue()` and `UpdatePost::queue()` send
+  `schedule: "queue"` so the API picks the next free slot (`PostSchedule`). A changed or
+  deleted slot answers with the queued posts it moved (`QueueMove`).
+- `client.connect_sessions()` mints and reads hosted connect links (`create`, `get`);
+  `CreateConnectSession` carries the end user's id, the networks offered, a redirect URL and
+  `ConnectBranding`. The hosted `url` is present on creation only.
+- `client.logs()` reads the request log (`GET /logs`) with every filter the API takes; the
+  page carries `meta.next_cursor` (pass it back as `before`) and a `summary` of the window.
+- `posts().unpublish` takes a live post down from every network and reports each
+  `PlatformRemoval`; `PostStatus::Unpublished`.
+- `webhooks().deliveries`, `delivery` and `redeliver` read the delivery log and queue a
+  delivery again; `WebhookDeliveryDetail` carries the body exactly as it was sent.
+- `automations().versions`, `version` and `restore_version` read and restore saved graph
+  versions (`AutomationVersion`, `AutomationVersionDetail`, `WorkflowGraph`).
+- `analytics().inbox` reads `GET /analytics/inbox`: totals, deltas, the daily series, volume
+  by platform, type and account, response-time buckets and the weekday-hour heatmap.
+
+### Fixed
+
+- `accounts().delete_discord_message` now returns `()`: the API answers 204 with no body,
+  so decoding a `DiscordAck` always failed.
+
 
 ### Added
 
