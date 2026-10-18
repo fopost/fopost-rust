@@ -2,6 +2,21 @@
 
 All notable changes to the `fopost` crate are documented here.
 
+## Unreleased
+
+### Added
+
+- `inbox().repost`, `unrepost`, `bookmark` and `unbookmark` act on an X item where
+  `can_repost` or `can_bookmark` is true, and `InboxItem` gains `reposted`, `bookmarked`,
+  `can_repost` and `can_bookmark`. `accounts().follow_x_user(id, user_id)` and
+  `unfollow_x_user` follow by numeric X user id and answer an `XFollowResult`.
+  `inbox().get_x_post(post_id, account_id)` and `search_x_posts(&XSearchParams)` read X
+  live as `XPost` and page with `meta.next_token`. Every one of these is an X API call
+  metered to the workspace; a `402 platform_balance_spent` means X's own balance is empty.
+  An X account connected before this release answers `409 reconnect_required` for repost,
+  bookmark and follow until it is reconnected, because the grant now asks for bookmark and
+  follow permissions.
+
 ## 0.3.0 - 2026-10-18
 
 ### Added
