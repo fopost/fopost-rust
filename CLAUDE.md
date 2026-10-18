@@ -117,11 +117,14 @@ or ad starts paused unless `paused` is `false`; keep both in the doc comments.
 
 `blog()` covers the `Blog` tag: settings (`posts`), keywords (`posts`, `suggest_seeds`
 and `plan_keywords` are `ai`) and articles (`request_article`/`regenerate_article` are
-`ai`, `submit_article` is `posts`, `publish_article` is `publish`). Every wire field is camelCase; `workspaceId` is a query parameter on the
-`{id}` routes and a body field on the collection routes (`InWorkspace` flattens it beside
-the payload). `update_settings` decodes the whole `{data, websiteSecret}` body as
-`BlogSettingsUpdated` because the secret sits outside the envelope. `BlogArticleFull`
-flattens `BlogArticle` and derefs to it.
+`ai`, `submit_article` is `posts`, `publish_article` is `publish`). Responses are
+snake_case and come bare, except the lists, which are `{data: [...]}`. Request bodies are
+camelCase. The workspace is `workspace_id` on the query string for reads and the `{id}`
+routes, and `workspaceId` in the body for the collection writes (`InWorkspace` flattens it
+beside the payload). `update_settings` decodes the settings plus `website_secret` as
+`BlogSettingsUpdated`, which flattens `BlogSettings`. `BlogArticleFull` flattens
+`BlogArticle` and derefs to it. The `article.published` webhook payload
+(`BlogArticlePublished`) stays camelCase, so `BlogArticleImage` also accepts `mediaId`.
 
 `verify_webhook(raw_body, &WebhookSignature, secret)` in `src/webhook.rs` (re-exported at
 the root) verifies any outbound delivery, including a blog Website target's. It uses

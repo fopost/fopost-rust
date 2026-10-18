@@ -37,6 +37,11 @@ All notable changes to the `fopost` crate are documented here.
 
 ### Changed
 
+- `client.blog()` matches the live API contract: the workspace travels as `workspace_id` on
+  the query string, single objects decode bare and lists from `{data}`, and every response
+  model reads snake_case. `BlogWebsiteTest` now carries `http_status` (what the website
+  answered) instead of `ok`, `status` and `error`; a failed test is still an `Error::Api`
+  with status 502 and `http_status` in its body.
 - `blog().plan_keywords` no longer fills the calendar: results land as `suggested`
   keywords, and setting one to `planned` with `update_keyword` picks it and gives it the
   next free date.
