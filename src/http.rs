@@ -112,6 +112,25 @@ impl HttpClient {
         decode(value)
     }
 
+    /// [`send`](Self::send) with extra request headers, for an `Idempotency-Key`.
+    pub(crate) async fn send_with_headers<T, B>(
+        &self,
+        method: Method,
+        path: &str,
+        query: Option<Query>,
+        body: Option<&B>,
+        headers: &[(&'static str, &str)],
+    ) -> Result<T>
+    where
+        T: DeserializeOwned,
+        B: Serialize + ?Sized,
+    {
+        let value = self
+            .send_value_with_headers(method, path, query, body, headers)
+            .await?;
+        decode(value)
+    }
+
     /// Same, but hands back the raw JSON — for endpoints the SDK does not model.
     pub(crate) async fn send_value<B>(
         &self,
@@ -119,6 +138,21 @@ impl HttpClient {
         path: &str,
         query: Option<Query>,
         body: Option<&B>,
+    ) -> Result<serde_json::Value>
+    where
+        B: Serialize + ?Sized,
+    {
+        self.send_value_with_headers(method, path, query, body, &[])
+            .await
+    }
+
+    async fn send_value_with_headers<B>(
+        &self,
+        method: Method,
+        path: &str,
+        query: Option<Query>,
+        body: Option<&B>,
+        headers: &[(&'static str, &str)],
     ) -> Result<serde_json::Value>
     where
         B: Serialize + ?Sized,
@@ -135,6 +169,9 @@ impl HttpClient {
                 .header("X-API-Key", &self.api_key)
                 .header("Accept", "application/json")
                 .header("User-Agent", USER_AGENT);
+            for (name, value) in headers {
+                request = request.header(*name, *value);
+            }
             if let Some(query) = &query {
                 request = request.query(query);
             }
