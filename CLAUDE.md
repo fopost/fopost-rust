@@ -112,8 +112,13 @@ bodies are snake_case; `PATCH /inbox/{id}` and every ads body are camelCase. `bo
 on campaigns, ad sets and network ads on `ads()` also need the `publish` scope, as do the
 inbox actions that act on the platform (`edit_comment`, `like`/`unlike`, `pin`/`unpin`,
 `react`, `start_conversation`, `set_typing`, media or quick replies on `reply_with`, deleting
-our own reply), and a boost
-or ad starts paused unless `paused` is `false`; keep both in the doc comments. Ads tracking
+our own reply, `repost`/`unrepost`, `bookmark`/`unbookmark`), and a boost
+or ad starts paused unless `paused` is `false`; keep both in the doc comments. The X
+pass-through reads `get_x_post` and `search_x_posts` (`/x/posts/{id}`, `/x/search`) sit on
+`inbox()` because they carry the `inbox` scope; `XPost`, `XSearchParams` and `XSearchPage`
+live in `models/inbox.rs`, and the search footer is `{ data, meta: { next_token } }`, a third
+page shape beside `Page<T>` and `InboxPage<T>`. `accounts().follow_x_user`/`unfollow_x_user`
+answer `XFollowResult` bare, with no `{data}` envelope. Ads tracking
 (pixels, custom conversions, `upload_conversions`, `send_conversions`, `conversion_batches`)
 needs `ads` only. `send_conversions` is the idempotent `POST /ads/conversions/events` and
 takes the `Idempotency-Key` as a required argument, passed through

@@ -20,6 +20,7 @@ use fopost::models::{
     SkipReason, StartInboxConversation, TelegramBotCommand, TriggerType, UpdateContact,
     UpdateDiscordIdentity, UpdateInboxItem, UpdateSlackIdentity, ValidateLength, ValidateMedia,
     ValidateMediaItem, ValidatePost, VoteInboxItem, WebhookDeliveryStatus, WebhookEvent,
+    XSearchParams,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -744,6 +745,127 @@ async fn liking_an_inbox_item_posts_without_a_body_and_reads_the_flags() {
     assert!(item.can_like && item.can_edit && item.can_private_reply);
     assert!(!item.can_send_media);
     assert_eq!(item.edited_at.as_deref(), Some("2026-09-02T09:00:00.000Z"));
+}
+
+#[tokio::test]
+async fn x_engagement_actions_post_without_a_body_and_read_the_flags() {
+    let server = MockServer::start().await;
+    for (action, flags) in [
+        (
+            "repost",
+            serde_json::json!({"reposted": true, "bookmarked": false}),
+        ),
+        (
+            "unrepost",
+            serde_json::json!({"reposted": false, "bookmarked": false}),
+        ),
+        (
+            "bookmark",
+            serde_json::json!({"reposted": false, "bookmarked": true}),
+        ),
+        (
+            "unbookmark",
+            serde_json::json!({"reposted": false, "bookmarked": false}),
+        ),
+    ] {
+        let mut item = serde_json::json!({
+            "id": "ib_x",
+            "platform": "twitter",
+            "type": "mention",
+            "state": "read",
+            "liked": false,
+            "can_like": true,
+            "can_repost": true,
+            "can_bookmark": true
+        });
+        item.as_object_mut()
+            .unwrap()
+            .extend(flags.as_object().unwrap().clone());
+        Mock::given(method("POST"))
+            .and(path(format!("/v1/inbox/ib_x/{action}")))
+            .and(body_bytes(Vec::new()))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": item})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+
+    let client = client(&server).await;
+    let inbox = client.inbox();
+    let item = inbox.repost("ib_x").await.unwrap();
+    assert!(item.reposted && !item.bookmarked);
+    assert!(item.can_repost && item.can_bookmark);
+    let item = inbox.unrepost("ib_x").await.unwrap();
+    assert!(!item.reposted);
+    let item = inbox.bookmark("ib_x").await.unwrap();
+    assert!(item.bookmarked && !item.reposted);
+    let item = inbox.unbookmark("ib_x").await.unwrap();
+    assert!(!item.bookmarked);
+}
+
+#[tokio::test]
+async fn x_post_lookup_and_search_pin_their_paths_and_query() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/x/posts/1234567890"))
+        .and(query_param("account_id", "acc_x"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "id": "1234567890",
+                "text": "Shipping day",
+                "permalink": "https://x.com/yourbrand/status/1234567890",
+                "author_name": "Your Brand",
+                "author_handle": "yourbrand",
+                "author_avatar_url": null,
+                "author_followers": 4200,
+                "conversation_id": "1234567890",
+                "parent_external_id": null,
+                "likes": 12, "replies": 3, "reposts": 4, "quotes": 1,
+                "platform_created_at": "2026-10-18T09:00:00.000Z"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/x/search"))
+        .and(query_param("account_id", "acc_x"))
+        .and(query_param("q", "fopost"))
+        .and(query_param("max_results", "20"))
+        .and(query_param("next_token", "cursor_1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{"id": "1", "text": "one"}, {"id": "2"}],
+            "meta": {"next_token": "cursor_2"}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let post = client
+        .inbox()
+        .get_x_post("1234567890", "acc_x")
+        .await
+        .unwrap();
+    assert_eq!(post.author_handle.as_deref(), Some("yourbrand"));
+    assert_eq!(post.author_followers, Some(4200));
+    assert_eq!(post.reposts, Some(4));
+    assert!(post.parent_external_id.is_none());
+
+    let page = client
+        .inbox()
+        .search_x_posts(
+            &XSearchParams::new("acc_x", "fopost")
+                .max_results(20)
+                .next_token("cursor_1"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.items.len(), 2);
+    assert!(page.items[1].text.is_none());
+    assert_eq!(page.meta.next_token.as_deref(), Some("cursor_2"));
 }
 
 #[tokio::test]
@@ -2986,6 +3108,45 @@ async fn reddit_reads_unwrap_the_envelope_and_pin_their_paths() {
     assert_eq!(rules.rules[0].applies_to.as_deref(), Some("link"));
     let flairs = accounts.reddit_flairs("acc_1", "webdev").await.unwrap();
     assert_eq!(flairs.flairs[0].id, "flair-1");
+}
+
+#[tokio::test]
+async fn x_follow_sends_the_user_id_and_reads_the_bare_result() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/accounts/acc_x/x/follow"))
+        .and(body_json(serde_json::json!({"user_id": "7788"})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "account_id": "acc_x", "user_id": "7788", "following": true
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/accounts/acc_x/x/unfollow"))
+        .and(body_json(serde_json::json!({"user_id": "7788"})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "account_id": "acc_x", "user_id": "7788", "following": false
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let followed = client
+        .accounts()
+        .follow_x_user("acc_x", "7788")
+        .await
+        .unwrap();
+    assert!(followed.following);
+    assert_eq!(followed.user_id, "7788");
+    let unfollowed = client
+        .accounts()
+        .unfollow_x_user("acc_x", "7788")
+        .await
+        .unwrap();
+    assert!(!unfollowed.following);
+    assert_eq!(unfollowed.account_id, "acc_x");
 }
 
 #[tokio::test]

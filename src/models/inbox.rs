@@ -184,6 +184,12 @@ pub struct InboxItem {
     pub hidden: bool,
     #[serde(default)]
     pub liked: bool,
+    /// Reposted to the account's own timeline (X).
+    #[serde(default)]
+    pub reposted: bool,
+    /// Bookmarked on the account (X).
+    #[serde(default)]
+    pub bookmarked: bool,
     /// How the account voted where the network ranks by votes: `up`, `down` or none.
     #[serde(default)]
     pub vote: Option<String>,
@@ -201,6 +207,12 @@ pub struct InboxItem {
     pub can_delete: bool,
     #[serde(default)]
     pub can_like: bool,
+    /// The network has a repost (X).
+    #[serde(default, alias = "can_repost")]
+    pub can_repost: bool,
+    /// The network has bookmarks (X).
+    #[serde(default, alias = "can_bookmark")]
+    pub can_bookmark: bool,
     /// The network ranks by votes, so a down vote exists.
     #[serde(default)]
     pub can_vote: bool,
@@ -904,4 +916,87 @@ impl VoteInboxItem {
             direction: direction.into(),
         }
     }
+}
+
+/// A post on X, read live with a connected X account's token.
+#[derive(Debug, Clone, Deserialize)]
+pub struct XPost {
+    pub id: String,
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub permalink: Option<String>,
+    #[serde(default)]
+    pub author_name: Option<String>,
+    #[serde(default)]
+    pub author_handle: Option<String>,
+    #[serde(default)]
+    pub author_avatar_url: Option<String>,
+    #[serde(default)]
+    pub author_followers: Option<u64>,
+    /// Thread root id.
+    #[serde(default)]
+    pub conversation_id: Option<String>,
+    /// The post this one replied to.
+    #[serde(default)]
+    pub parent_external_id: Option<String>,
+    #[serde(default)]
+    pub likes: Option<u64>,
+    #[serde(default)]
+    pub replies: Option<u64>,
+    #[serde(default)]
+    pub reposts: Option<u64>,
+    #[serde(default)]
+    pub quotes: Option<u64>,
+    #[serde(default)]
+    pub platform_created_at: Option<String>,
+}
+
+/// Query for `GET /x/search`. `account_id` names the X account whose token does the
+/// read; `q` is 1 to 512 characters.
+#[derive(Debug, Clone, Default)]
+pub struct XSearchParams {
+    pub account_id: String,
+    pub q: String,
+    /// 10 to 100, default 10.
+    pub max_results: Option<u32>,
+    /// Cursor from the previous page's `meta.next_token`.
+    pub next_token: Option<String>,
+}
+
+impl XSearchParams {
+    pub fn new(account_id: impl Into<String>, q: impl Into<String>) -> Self {
+        Self {
+            account_id: account_id.into(),
+            q: q.into(),
+            ..Self::default()
+        }
+    }
+
+    pub fn max_results(mut self, max_results: u32) -> Self {
+        self.max_results = Some(max_results);
+        self
+    }
+
+    pub fn next_token(mut self, next_token: impl Into<String>) -> Self {
+        self.next_token = Some(next_token.into());
+        self
+    }
+}
+
+/// The cursor footer on an X search page.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct XSearchMeta {
+    /// `None` on the last page.
+    #[serde(default)]
+    pub next_token: Option<String>,
+}
+
+/// One page of X search results.
+#[derive(Debug, Clone, Deserialize)]
+pub struct XSearchPage {
+    #[serde(rename = "data", default = "Vec::new")]
+    pub items: Vec<XPost>,
+    #[serde(default)]
+    pub meta: XSearchMeta,
 }
