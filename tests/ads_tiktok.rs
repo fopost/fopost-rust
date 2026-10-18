@@ -148,15 +148,15 @@ async fn conversions_report_what_the_network_accepted() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/ads/conversions"))
-        .respond_with(
-            ResponseTemplate::new(202).set_body_json(serde_json::json!({"data": {"accepted": 2}})),
-        )
+        .respond_with(ResponseTemplate::new(202).set_body_json(serde_json::json!({
+            "data": {"id": "batch_1", "accepted": 2, "eventCount": 2, "replayed": false}
+        })))
         .expect(1)
         .mount(&server)
         .await;
 
     let client = client(&server).await;
-    let accepted = client
+    let result = client
         .ads()
         .upload_conversions(&UploadConversions {
             workspace_id: "ws_1".into(),
@@ -172,7 +172,9 @@ async fn conversions_report_what_the_network_accepted() {
         .await
         .unwrap();
 
-    assert_eq!(accepted, 2);
+    assert_eq!(result.id, "batch_1");
+    assert_eq!(result.accepted, 2);
+    assert!(!result.replayed);
 }
 
 #[tokio::test]
