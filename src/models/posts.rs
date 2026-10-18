@@ -273,6 +273,25 @@ pub struct CancelResult {
     pub deliveries: Vec<PublishDelivery>,
 }
 
+/// One network's answer to an unpublish.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PlatformRemoval {
+    /// Social account id.
+    pub account_id: String,
+    pub platform: String,
+    /// False when the network refused to take the post down.
+    pub removed: bool,
+}
+
+/// What `unpublish` answers with: one entry per network the post was live on.
+#[derive(Debug, Clone, Deserialize)]
+pub struct UnpublishResult {
+    #[serde(default)]
+    pub post_status: Option<PostStatus>,
+    #[serde(default)]
+    pub deliveries: Vec<PlatformRemoval>,
+}
+
 string_enum! {
     /// How seriously to take a content signal. Signals never block a publish.
     pub enum SignalLevel {
@@ -599,6 +618,13 @@ pub struct PostAnalytics {
 
 // ─── Request bodies ────────────────────────────────────────────────
 
+string_enum! {
+    /// How the API picks the time for a post: `queue` takes the next free queue slot.
+    pub enum PostSchedule {
+        Queue => "queue",
+    }
+}
+
 /// The body of `POST /posts`. Build it with [`CreatePost::new`].
 #[derive(Debug, Clone, Serialize)]
 pub struct CreatePost {
@@ -616,6 +642,9 @@ pub struct CreatePost {
     pub status: Option<PostStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schedule_at: Option<String>,
+    /// `Queue` puts the post in the next free queue slot instead of `schedule_at`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<PostSchedule>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repeatable: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -656,6 +685,7 @@ impl CreatePost {
             artifact_type: None,
             status: None,
             schedule_at: None,
+            schedule: None,
             repeatable: None,
             repeatable_times: None,
             repeatable_gap: None,
@@ -691,6 +721,12 @@ impl CreatePost {
     pub fn schedule_at(mut self, at: impl Into<String>) -> Self {
         self.status = Some(PostStatus::Scheduled);
         self.schedule_at = Some(at.into());
+        self
+    }
+
+    /// Add it to the posting queue: the API picks the next free slot.
+    pub fn queue(mut self) -> Self {
+        self.schedule = Some(PostSchedule::Queue);
         self
     }
 
@@ -730,6 +766,9 @@ pub struct UpdatePost {
     pub status: Option<PostStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schedule_at: Option<String>,
+    /// `Queue` puts the post in the next free queue slot instead of `schedule_at`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<PostSchedule>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repeatable: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -772,6 +811,12 @@ impl UpdatePost {
     pub fn schedule_at(mut self, at: impl Into<String>) -> Self {
         self.status = Some(PostStatus::Scheduled);
         self.schedule_at = Some(at.into());
+        self
+    }
+
+    /// Move it into the posting queue: the API picks the next free slot.
+    pub fn queue(mut self) -> Self {
+        self.schedule = Some(PostSchedule::Queue);
         self
     }
 

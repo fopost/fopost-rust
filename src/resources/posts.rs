@@ -7,7 +7,7 @@ use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
     BulkImportRollback, BulkPostAction, BulkResult, CancelResult, CreatePost, Delivery,
     DuplicatedPost, ListPosts, Message, Page, Post, PostAnalytics, PreflightResult, PublishOptions,
-    PublishOutcome, PublishRun, RetryOptions, RetryResult, UpdatePost,
+    PublishOutcome, PublishRun, RetryOptions, RetryResult, UnpublishResult, UpdatePost,
 };
 
 /// Posts and everything that happens to them.
@@ -142,6 +142,21 @@ impl Posts<'_> {
             )
             .await?;
         Ok(body.data)
+    }
+
+    /// Take a live post down from every network and mark each delivery
+    /// `unpublished`; the post stays as a record. Refused whole with 409 when
+    /// one of its networks cannot delete a live post. A network that refuses at
+    /// the time answers `removed: false` and keeps its delivery published.
+    pub async fn unpublish(&self, id: &str) -> Result<UnpublishResult> {
+        self.http
+            .send::<UnpublishResult, ()>(
+                Method::POST,
+                &format!("/posts/{id}/unpublish"),
+                None,
+                None,
+            )
+            .await
     }
 
     /// Per-account blockers and advisory content signals, without publishing.
