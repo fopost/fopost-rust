@@ -115,3 +115,61 @@ impl UpdateWebhook {
         self
     }
 }
+
+string_enum! {
+    /// How one delivery attempt ended.
+    pub enum WebhookDeliveryStatus {
+        Success => "success",
+        Failed => "failed",
+    }
+}
+
+/// One attempt to deliver an event to a webhook endpoint.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WebhookDelivery {
+    pub id: String,
+    #[serde(default)]
+    pub webhook_id: Option<String>,
+    #[serde(default)]
+    pub event: Option<WebhookEvent>,
+    /// The `X-FoPost-Delivery` id; every attempt of one event shares it.
+    #[serde(default)]
+    pub delivery_key: Option<String>,
+    /// 1 for the first send; retries and redeliveries count up.
+    #[serde(default)]
+    pub attempt: i64,
+    #[serde(default)]
+    pub status: Option<WebhookDeliveryStatus>,
+    /// `None` when no response arrived.
+    #[serde(default)]
+    pub response_status: Option<i64>,
+    /// Up to 500 characters of what the endpoint answered, secrets redacted.
+    #[serde(default)]
+    pub response_snippet: Option<String>,
+    #[serde(default)]
+    pub duration_ms: i64,
+    /// SHA-256 of the body that was sent.
+    #[serde(default)]
+    pub payload_hash: Option<String>,
+    #[serde(default)]
+    pub next_retry_at: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+}
+
+/// A single delivery read in full: the row plus the body exactly as it was sent.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WebhookDeliveryDetail {
+    #[serde(flatten)]
+    pub delivery: WebhookDelivery,
+    #[serde(default)]
+    pub payload: Option<serde_json::Value>,
+}
+
+impl std::ops::Deref for WebhookDeliveryDetail {
+    type Target = WebhookDelivery;
+
+    fn deref(&self) -> &WebhookDelivery {
+        &self.delivery
+    }
+}
