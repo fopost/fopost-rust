@@ -2,10 +2,20 @@
 
 All notable changes to the `fopost` crate are documented here.
 
-## Unreleased
+## 0.3.0 - 2026-10-18
 
 ### Added
 
+- `accounts().reddit_subreddits`, `reddit_subreddit_rules`, `reddit_flairs` and
+  `set_reddit_default_subreddit` read a Reddit account's destinations and pick its default;
+  `validate().subreddit` checks a subreddit before posting, and `inbox().vote` casts a vote
+  with `direction` `up`, `down` or `none` to take an earlier vote back. A flair id is valid
+  only in the subreddit it came from.
+- `client.blogs()` wraps the blogs, articles and products a connected site already owns,
+  addressed by the platform's own ids (`list_blogs`, `list_articles`, `get_article`,
+  `create_article`, `update_article`, `delete_article`, `list_products`,
+  `update_product`). `update_article` edits the live article in place and never creates a
+  second post. Reads need `posts`; writes to the site need `publish` as well.
 - `blog().suggest_seeds(workspace_id, &SuggestBlogSeeds)` suggests about 10 search terms
   from the blog goal and topics (needs `ai`, 402 on an empty balance), and
   `blog().submit_article` moves a draft, failed or rejected article to `in_review` (needs
