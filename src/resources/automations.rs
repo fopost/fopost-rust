@@ -6,7 +6,8 @@ use crate::error::Result;
 use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
     Automation, AutomationCreated, AutomationDeleted, AutomationRun, AutomationStats,
-    AutomationToggled, AutomationTriggered, CreateAutomation, Page, UpdateAutomation,
+    AutomationToggled, AutomationTriggered, AutomationVersion, AutomationVersionDetail,
+    AutomationVersionRestored, CreateAutomation, Page, UpdateAutomation,
 };
 
 /// Automations.
@@ -143,5 +144,54 @@ impl Automations<'_> {
             )
             .await?;
         Ok(body.data)
+    }
+
+    /// Saved versions of the automation's graph, newest first.
+    pub async fn versions(
+        &self,
+        id: &str,
+        page: Option<u32>,
+        per_page: Option<u32>,
+    ) -> Result<Page<AutomationVersion>> {
+        let mut query: Query = Vec::new();
+        push_opt(&mut query, "page", page);
+        push_opt(&mut query, "per_page", per_page);
+        self.http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/automations/{id}/versions"),
+                Some(query),
+                None,
+            )
+            .await
+    }
+
+    /// One version, with its graph.
+    pub async fn version(&self, id: &str, version: i64) -> Result<AutomationVersionDetail> {
+        self.http
+            .send::<AutomationVersionDetail, ()>(
+                Method::GET,
+                &format!("/automations/{id}/versions/{version}"),
+                None,
+                None,
+            )
+            .await
+    }
+
+    /// Make an older version the live graph again. It is saved as a new
+    /// version, so nothing in the history is lost.
+    pub async fn restore_version(
+        &self,
+        id: &str,
+        version: i64,
+    ) -> Result<AutomationVersionRestored> {
+        self.http
+            .send::<AutomationVersionRestored, ()>(
+                Method::POST,
+                &format!("/automations/{id}/versions/{version}/restore"),
+                None,
+                None,
+            )
+            .await
     }
 }

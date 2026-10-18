@@ -561,14 +561,25 @@ impl Accounts<'_> {
     }
 
     /// Pinned messages in the account's channel.
+    ///
+    /// Wraps the API's `listDiscordPins` operation.
     pub async fn discord_pins(&self, id: &str) -> Result<Vec<DiscordMessage>> {
         self.discord_get(id, "messages/pinned".to_string()).await
     }
 
-    /// Remove a message from the account's channel.
-    pub async fn delete_discord_message(&self, id: &str, message_id: &str) -> Result<DiscordAck> {
-        self.discord_send(Method::DELETE, id, format!("messages/{message_id}"))
-            .await
+    /// Remove a message from the account's channel. The answer has no body.
+    ///
+    /// Wraps the API's `deleteDiscordMessage` operation.
+    pub async fn delete_discord_message(&self, id: &str, message_id: &str) -> Result<()> {
+        self.http
+            .send::<serde_json::Value, ()>(
+                Method::DELETE,
+                &format!("/accounts/{id}/discord/messages/{message_id}"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(())
     }
 
     /// Pin a message in the account's channel.
@@ -709,6 +720,8 @@ impl Accounts<'_> {
     }
 
     /// One member of the server.
+    ///
+    /// Wraps the API's `getDiscordMember` operation.
     pub async fn discord_member(&self, id: &str, member_id: &str) -> Result<DiscordMember> {
         self.discord_get(id, format!("members/{member_id}")).await
     }

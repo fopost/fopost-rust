@@ -19,7 +19,7 @@ use fopost::models::{
     SequenceStep, SetAdStatuses, SetGoogleAdSchedule, SetRedditDefaultSubreddit, SignalLevel,
     SkipReason, StartInboxConversation, TelegramBotCommand, TriggerType, UpdateContact,
     UpdateDiscordIdentity, UpdateInboxItem, UpdateSlackIdentity, ValidateLength, ValidateMedia,
-    ValidateMediaItem, ValidatePost, VoteInboxItem, WebhookEvent,
+    ValidateMediaItem, ValidatePost, VoteInboxItem, WebhookDeliveryStatus, WebhookEvent,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -3057,4 +3057,157 @@ async fn voting_sends_the_direction() {
         .unwrap();
     assert_eq!(item.vote.as_deref(), Some("down"));
     assert!(item.can_vote);
+}
+
+#[tokio::test]
+async fn webhook_deliveries_are_listed_read_and_redelivered() {
+    let server = MockServer::start().await;
+    let row = serde_json::json!({
+        "id": "del_1",
+        "webhook_id": "wh_1",
+        "event": "post.published",
+        "delivery_key": "dk_1",
+        "attempt": 2,
+        "status": "failed",
+        "response_status": 500,
+        "response_snippet": "boom",
+        "duration_ms": 120,
+        "payload_hash": "abc",
+        "next_retry_at": null,
+        "created_at": "2026-10-18T10:00:00.000Z"
+    });
+    Mock::given(method("GET"))
+        .and(path("/v1/webhooks/wh_1/deliveries"))
+        .and(query_param("status", "failed"))
+        .and(query_param("limit", "10"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "data": [row] })),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/webhooks/wh_1/deliveries/del_1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json({
+            let mut detail = row.clone();
+            detail["payload"] =
+                serde_json::json!({ "event": "post.published", "data": { "id": "post_1" } });
+            detail
+        }))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/webhooks/wh_1/deliveries/del_1/redeliver"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let deliveries = client
+        .webhooks()
+        .deliveries("wh_1", Some(WebhookDeliveryStatus::Failed), Some(10))
+        .await
+        .unwrap();
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].attempt, 2);
+    assert_eq!(deliveries[0].event, Some(WebhookEvent::PostPublished));
+    assert_eq!(deliveries[0].response_status, Some(500));
+
+    let detail = client.webhooks().delivery("wh_1", "del_1").await.unwrap();
+    assert_eq!(detail.id, "del_1");
+    assert_eq!(detail.payload.as_ref().unwrap()["data"]["id"], "post_1");
+
+    client.webhooks().redeliver("wh_1", "del_1").await.unwrap();
+}
+
+#[tokio::test]
+async fn automation_versions_are_listed_read_and_restored() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/automations/auto_1/versions"))
+        .and(query_param("page", "1"))
+        .and(query_param("per_page", "10"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{
+                "version": 3,
+                "note": "Added a delay",
+                "created_by": { "name": "Ops" },
+                "created_at": "2026-10-18T10:00:00.000Z",
+                "node_count": 4,
+                "nodes_added": [{ "id": "n4", "kind": "delay", "label": null }],
+                "nodes_removed": []
+            }],
+            "meta": { "page": 1, "per_page": 10, "total": 3, "total_pages": 1 }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/automations/auto_1/versions/3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "version": 3,
+            "note": "Added a delay",
+            "created_by": { "name": "Ops" },
+            "created_at": "2026-10-18T10:00:00.000Z",
+            "graph": {
+                "nodes": [{ "id": "n1", "kind": "trigger", "config": { "source": "rss" }, "position": 0 }],
+                "edges": [{ "id": "e1", "source": "n1", "source_handle": null, "target": "n4" }]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/automations/auto_1/versions/2/restore"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "version": 4,
+            "graph": { "nodes": [], "edges": [] },
+            "steps": [{ "id": 1, "position": 0, "actionType": "publish" }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let versions = client
+        .automations()
+        .versions("auto_1", Some(1), Some(10))
+        .await
+        .unwrap();
+    assert_eq!(versions.len(), 1);
+    assert_eq!(versions.items[0].version, 3);
+    assert_eq!(versions.items[0].nodes_added[0].kind, "delay");
+
+    let detail = client.automations().version("auto_1", 3).await.unwrap();
+    assert_eq!(detail.graph.nodes.len(), 1);
+    assert_eq!(detail.graph.edges[0].target, "n4");
+    assert_eq!(detail.created_by.unwrap().name, "Ops");
+
+    let restored = client
+        .automations()
+        .restore_version("auto_1", 2)
+        .await
+        .unwrap();
+    assert_eq!(restored.version, 4);
+    assert_eq!(restored.steps.len(), 1);
+}
+
+#[tokio::test]
+async fn deleting_a_discord_message_accepts_an_empty_answer() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/v1/accounts/acc_1/discord/messages/m1"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    client
+        .accounts()
+        .delete_discord_message("acc_1", "m1")
+        .await
+        .unwrap();
 }
