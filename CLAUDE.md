@@ -113,7 +113,12 @@ on campaigns, ad sets and network ads on `ads()` also need the `publish` scope, 
 inbox actions that act on the platform (`edit_comment`, `like`/`unlike`, `pin`/`unpin`,
 `react`, `start_conversation`, `set_typing`, media or quick replies on `reply_with`, deleting
 our own reply), and a boost
-or ad starts paused unless `paused` is `false`; keep both in the doc comments.
+or ad starts paused unless `paused` is `false`; keep both in the doc comments. Ads tracking
+(pixels, custom conversions, `upload_conversions`, `send_conversions`, `conversion_batches`)
+needs `ads` only. `send_conversions` is the idempotent `POST /ads/conversions/events` and
+takes the `Idempotency-Key` as a required argument, passed through
+`HttpClient::send_with_headers`; it is not named `send_conversion_events` because that name
+already belongs to the LinkedIn conversion-rule send.
 
 `blog()` covers the `Blog` tag: settings (`posts`), keywords (`posts`, `suggest_seeds`
 and `plan_keywords` are `ai`) and articles (`request_article`/`regenerate_article` are

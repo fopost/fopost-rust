@@ -18,23 +18,26 @@ use crate::models::{
     Ad, AdAccountQuery, AdAccountTree, AdActivityLog, AdActivityQuery, AdAudience, AdAudiences,
     AdBusinessCenter, AdCampaign, AdCommentReply, AdCommentWrite, AdCommentsPage, AdCommentsQuery,
     AdCompany, AdConnection, AdCreatives, AdForecast, AdIdentity, AdInsightsQuery, AdLabel,
-    AdLabelInput, AdLibraryPage, AdLibraryQuery, AdObjectQuery, AdProvider, AdSet, AdSource,
-    AdStatus, AdStatusResult, AdStudy, ApplyAdLabel, ArchiveLeadForm, AudienceCreated,
-    AudiencesQuery, AuthorizeGoogleAds, AuthorizeMetaAds, BidPricing, BoostPost, BoostablePost,
-    CatalogBatchResult, CatalogProducts, CatalogProductsQuery, ConversionApiEvent,
-    ConversionMetrics, ConversionRule, ConversionsAccepted, CreateAd, CreateAdSet, CreateAdStudy,
-    CreateAudience, CreateCampaign, CreateCatalog, CreateConversionRule, CreateCreative,
-    CreateHighDemandPeriod, CreateLeadForm, CreateNetworkAd, CreateProductFeed,
-    CreateReachFrequency, CreateValueRuleSet, Creative, CreativesQuery, EstimateReach, ExternalAd,
-    HighDemandPeriod, InsightsQuery, InsightsReport, IosCampaignLimits, LeadFormDetail,
-    LeadFormQuery, LeadFormSource, LeadPage, LeadPageSubscribed, LeadsFeedPage, LeadsFeedQuery,
-    LeadsPage, LeadsQuery, Message, NetworkAd, PartnershipCreator, PartnershipQuery,
-    ProductCatalog, ProductCatalogs, ProductFeed, ProductFeedUpload, ProductSet, ProductSetInput,
-    ReachEstimate, ReachFrequencyAction, ReachFrequencyPrediction, ReachFrequencyPredictions,
-    RequestPartnership, SetAdStatus, SetAdStatuses, SparkPost, SparkPostsQuery, StartFeedUpload,
-    SubscribeLeadPage, SupplyForecast, TargetingOption, TargetingSearch, UpdateAdSet,
-    UpdateAudience, UpdateCampaign, UpdateCatalog, UpdateConversionRule, UpdateNetworkAd,
-    UploadConversions, ValueRuleSet, WriteCatalogProducts,
+    AdLabelInput, AdLibraryPage, AdLibraryQuery, AdObjectQuery, AdPixel, AdPixelDetail,
+    AdPixelStats, AdProvider, AdSet, AdSource, AdStatus, AdStatusResult, AdStudy, ApplyAdLabel,
+    ArchiveLeadForm, AudienceCreated, AudiencesQuery, AuthorizeGoogleAds, AuthorizeMetaAds,
+    BidPricing, BoostPost, BoostablePost, CatalogBatchResult, CatalogProducts,
+    CatalogProductsQuery, ConversionApiEvent, ConversionBatch, ConversionBatchesQuery,
+    ConversionMetrics, ConversionRule, ConversionUploadResult, CreateAd, CreateAdSet,
+    CreateAdStudy, CreateAudience, CreateCampaign, CreateCatalog, CreateConversionRule,
+    CreateCreative, CreateCustomConversion, CreateHighDemandPeriod, CreateLeadForm,
+    CreateNetworkAd, CreatePixel, CreateProductFeed, CreateReachFrequency, CreateValueRuleSet,
+    Creative, CreativesQuery, CustomConversion, DeleteCustomConversion, EstimateReach,
+    EventMatchQuality, ExternalAd, HighDemandPeriod, InsightsQuery, InsightsReport,
+    IosCampaignLimits, LeadFormDetail, LeadFormQuery, LeadFormSource, LeadPage, LeadPageSubscribed,
+    LeadsFeedPage, LeadsFeedQuery, LeadsPage, LeadsQuery, Message, NetworkAd, PartnershipCreator,
+    PartnershipQuery, ProductCatalog, ProductCatalogs, ProductFeed, ProductFeedUpload, ProductSet,
+    ProductSetInput, ReachEstimate, ReachFrequencyAction, ReachFrequencyPrediction,
+    ReachFrequencyPredictions, RequestPartnership, SetAdStatus, SetAdStatuses, SharePixel,
+    SparkPost, SparkPostsQuery, StartFeedUpload, SubscribeLeadPage, SupplyForecast,
+    TargetingOption, TargetingSearch, UpdateAdSet, UpdateAudience, UpdateCampaign, UpdateCatalog,
+    UpdateConversionRule, UpdateCustomConversion, UpdateNetworkAd, UpdatePixel, UploadConversions,
+    ValueRuleSet, WriteCatalogProducts,
 };
 
 /// Ads.
@@ -284,14 +287,187 @@ impl Ads<'_> {
         Ok(body.data)
     }
 
-    /// Offline conversions against a pixel the ad account owns. Identifiers are
-    /// hashed before anything leaves FoPost.
-    pub async fn upload_conversions(&self, input: &UploadConversions) -> Result<i64> {
-        let body: Envelope<ConversionsAccepted> = self
+    /// Conversions against a pixel the ad account owns, through the network's
+    /// Conversions API. Identifiers are hashed before anything leaves FoPost.
+    /// For a retry-safe send, use [`Ads::send_conversions`].
+    pub async fn upload_conversions(
+        &self,
+        input: &UploadConversions,
+    ) -> Result<ConversionUploadResult> {
+        let body: Envelope<ConversionUploadResult> = self
             .http
             .send(Method::POST, "/ads/conversions", None, Some(input))
             .await?;
-        Ok(body.data.accepted)
+        Ok(body.data)
+    }
+
+    /// [`Ads::upload_conversions`] with a required `Idempotency-Key`. A second
+    /// send with the same key answers the stored batch with `replayed: true`
+    /// and nothing reaches the network again.
+    pub async fn send_conversions(
+        &self,
+        input: &UploadConversions,
+        idempotency_key: &str,
+    ) -> Result<ConversionUploadResult> {
+        let body: Envelope<ConversionUploadResult> = self
+            .http
+            .send_with_headers(
+                Method::POST,
+                "/ads/conversions/events",
+                None,
+                Some(input),
+                &[("Idempotency-Key", idempotency_key)],
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Stored conversion batches, newest first. Events carry hashes only.
+    pub async fn conversion_batches(
+        &self,
+        params: &ConversionBatchesQuery,
+    ) -> Result<Vec<ConversionBatch>> {
+        let mut query = workspace_query(params.workspace_id.as_deref());
+        push_opt(&mut query, "connection_id", params.connection_id.as_deref());
+        push_opt(&mut query, "limit", params.limit);
+        self.get("/ads/conversions/events", query).await
+    }
+
+    /// The pixels an ad account owns.
+    pub async fn pixels(&self, params: &AdAccountQuery) -> Result<Vec<AdPixel>> {
+        self.get("/ads/pixels", account_query(params)).await
+    }
+
+    /// Create a pixel. The answer carries its install script.
+    pub async fn create_pixel(&self, input: &CreatePixel) -> Result<AdPixelDetail> {
+        let body: Envelope<AdPixelDetail> = self
+            .http
+            .send(Method::POST, "/ads/pixels", None, Some(input))
+            .await?;
+        Ok(body.data)
+    }
+
+    /// One pixel with its install script and data-use setting.
+    pub async fn pixel(&self, id: &str, params: &AdAccountQuery) -> Result<AdPixelDetail> {
+        self.get(&format!("/ads/pixels/{id}"), account_query(params))
+            .await
+    }
+
+    /// Rename a pixel or change what its data may be used for.
+    pub async fn update_pixel(&self, id: &str, input: &UpdatePixel) -> Result<AdPixelDetail> {
+        let body: Envelope<AdPixelDetail> = self
+            .http
+            .send(
+                Method::PATCH,
+                &format!("/ads/pixels/{id}"),
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Share a pixel with another ad account in the same business portfolio.
+    pub async fn share_pixel(&self, id: &str, input: &SharePixel) -> Result<()> {
+        self.http
+            .send::<serde_json::Value, _>(
+                Method::POST,
+                &format!("/ads/pixels/{id}/share"),
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Event counts on a pixel over the last 28 days.
+    pub async fn pixel_stats(&self, id: &str, params: &AdAccountQuery) -> Result<AdPixelStats> {
+        self.get(&format!("/ads/pixels/{id}/stats"), account_query(params))
+            .await
+    }
+
+    /// Event match quality per event on a pixel: the network's score and how
+    /// often each identifier was present.
+    pub async fn event_match_quality(
+        &self,
+        id: &str,
+        params: &AdAccountQuery,
+    ) -> Result<Vec<EventMatchQuality>> {
+        self.get(
+            &format!("/ads/pixels/{id}/match-quality"),
+            account_query(params),
+        )
+        .await
+    }
+
+    /// The custom conversions on an ad account.
+    pub async fn custom_conversions(
+        &self,
+        params: &AdAccountQuery,
+    ) -> Result<Vec<CustomConversion>> {
+        self.get("/ads/custom-conversions", account_query(params))
+            .await
+    }
+
+    /// Create a custom conversion from a pixel event and a URL rule.
+    pub async fn create_custom_conversion(
+        &self,
+        input: &CreateCustomConversion,
+    ) -> Result<CustomConversion> {
+        let body: Envelope<CustomConversion> = self
+            .http
+            .send(Method::POST, "/ads/custom-conversions", None, Some(input))
+            .await?;
+        Ok(body.data)
+    }
+
+    /// One custom conversion.
+    pub async fn custom_conversion(
+        &self,
+        id: &str,
+        params: &AdAccountQuery,
+    ) -> Result<CustomConversion> {
+        self.get(
+            &format!("/ads/custom-conversions/{id}"),
+            account_query(params),
+        )
+        .await
+    }
+
+    /// Change a custom conversion's name, description or default value. The
+    /// rule cannot change once created.
+    pub async fn update_custom_conversion(
+        &self,
+        id: &str,
+        input: &UpdateCustomConversion,
+    ) -> Result<CustomConversion> {
+        let body: Envelope<CustomConversion> = self
+            .http
+            .send(
+                Method::PATCH,
+                &format!("/ads/custom-conversions/{id}"),
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Delete a custom conversion.
+    pub async fn delete_custom_conversion(
+        &self,
+        id: &str,
+        input: &DeleteCustomConversion,
+    ) -> Result<()> {
+        self.http
+            .send::<serde_json::Value, _>(
+                Method::DELETE,
+                &format!("/ads/custom-conversions/{id}"),
+                None,
+                Some(input),
+            )
+            .await?;
+        Ok(())
     }
 
     /// One page of an ad's comments; pass `next_cursor` back as `after`.
