@@ -111,6 +111,7 @@ string_enum! {
         PartiallyFailed => "partially_failed",
         Failed => "failed",
         Cancelled => "cancelled",
+        Unpublished => "unpublished",
     }
 }
 
