@@ -82,14 +82,14 @@ workspace answers `403`.
 
 | Namespace | Methods |
 | --- | --- |
-| `posts()` | `list`, `list_all`, `get`, `create`, `create_with_files`, `update`, `update_with_files`, `delete`, `duplicate`, `publish`, `retry`, `cancel`, `preflight`, `deliveries`, `publish_runs`, `analytics`, `bulk`, `validate_import`, `commit_import`, `rollback_import` |
+| `posts()` | `list`, `list_all`, `get`, `create`, `create_with_files`, `update`, `update_with_files`, `delete`, `duplicate`, `publish`, `unpublish`, `retry`, `cancel`, `preflight`, `deliveries`, `publish_runs`, `analytics`, `bulk`, `validate_import`, `commit_import`, `rollback_import` |
 | `accounts()` | `list`, `list_with`, `get`, `create`, `rename`, `move_to`, `delete`, `toggle_primary`, `validate`, `health`, `health_summary`, `refresh_token`, `analytics`, `communities`, `sync_communities`, `search_communities`, `add_community`, `remove_community`, `create_telegram_connect_code`, `telegram_connect_status`, `telegram_bot_commands`, `set_telegram_bot_commands`, `delete_telegram_bot_commands`, `slack_channels`, `slack_members`, `slack_identity`, `update_slack_identity`, `reddit_subreddits`, `reddit_subreddit_rules`, `reddit_flairs`, `set_reddit_default_subreddit`, `ice_breakers`, `set_ice_breakers`, `delete_ice_breakers`, `persistent_menu`, `set_persistent_menu`, `delete_persistent_menu`, `greeting`, `set_greeting`, `delete_greeting`, `webhook_subscription`, `resubscribe_webhook`, `discord_channels`, `switch_discord_channel`, `discord_identity`, `update_discord_identity`, `discord_pins`, `delete_discord_message`, `pin_discord_message`, `unpin_discord_message`, `crosspost_discord_message`, `create_discord_thread`, `send_discord_dm`, `discord_events`, `discord_event`, `create_discord_event`, `update_discord_event`, `delete_discord_event`, `discord_members`, `discord_member`, `discord_roles`, `create_discord_role`, `update_discord_role`, `delete_discord_role`, `add_discord_member_role`, `remove_discord_member_role`, `platform_metrics` |
 | `account_groups()` | `list`, `get`, `create`, `update`, `delete`, `set_members` |
 | `workspaces()` | `list`, `get`, `create`, `update`, `delete`, `analytics` |
 | `labels()` | `list`, `get`, `create`, `update`, `delete` |
-| `webhooks()` | `list`, `create`, `update`, `delete`, `test` |
-| `automations()` | `list`, `get`, `create`, `update`, `delete`, `toggle`, `runs`, `get_run`, `stats`, `trigger` |
-| `analytics()` | `overview`, `time_series`, `top_posts`, `labels`, `posts_table`, `posting_streak`, `demographics`, `collect`, `decay`, `frequency`, `timeline`, `changes`, `collect_post`, `native_posts` |
+| `webhooks()` | `list`, `create`, `update`, `delete`, `test`, `deliveries`, `delivery`, `redeliver` |
+| `automations()` | `list`, `get`, `create`, `update`, `delete`, `toggle`, `runs`, `get_run`, `stats`, `trigger`, `versions`, `version`, `restore_version` |
+| `analytics()` | `overview`, `time_series`, `top_posts`, `labels`, `posts_table`, `posting_streak`, `demographics`, `collect`, `decay`, `frequency`, `timeline`, `changes`, `collect_post`, `native_posts`, `inbox` |
 | `media()` | `list`, `limits`, `upload`, `presign`, `complete`, `upload_direct`, `upload_direct_with`, `delete` |
 | `contacts()` | `list`, `get`, `create`, `update`, `delete`, `conversations`, `import`, `list_fields`, `create_field`, `update_field`, `delete_field`, `conversation_analytics` |
 | `broadcasts()` | `list`, `get`, `create`, `update`, `delete`, `send`, `cancel`, `recipients` |
@@ -105,6 +105,9 @@ workspace answers `403`.
 | `blog()` | `get_settings`, `update_settings`, `rotate_website_secret`, `test_website`, `list_keywords`, `suggest_seeds`, `plan_keywords`, `add_keyword`, `update_keyword`, `delete_keyword`, `list_articles`, `request_article`, `get_article`, `update_article`, `regenerate_article`, `submit_article`, `publish_article`, `reject_article`, `delete_article` |
 | `blogs()` | `list_blogs`, `list_articles`, `get_article`, `create_article`, `update_article`, `delete_article`, `list_products`, `update_product` |
 | `activity()` | `list` |
+| `queue()` | `slots`, `create_slot`, `update_slot`, `delete_slot`, `next`, `preview` |
+| `connect_sessions()` | `create`, `get` |
+| `logs()` | `list` |
 
 `account_groups()` needs the `accounts` scope. `inbox()`, `knowledge()`, `contacts()`, `broadcasts()` and `sequences()` need the `inbox` scope (and `publish` on `broadcasts().send`/`cancel` and `sequences().enroll`/`unenroll`, which reach a platform), except `contacts().conversation_analytics`, which needs `analytics` and `ads()` the `ads` scope; `boost`, `create`, `set_status`,
 `delete`, `set_statuses` and every create, update, delete and duplicate on campaigns, ad sets and network ads
