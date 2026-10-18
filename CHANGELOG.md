@@ -2,6 +2,28 @@
 
 All notable changes to the `fopost` crate are documented here.
 
+## Unreleased
+
+### Added
+
+- Ads tracking on `ads()` (scope `ads` only): `pixels`, `create_pixel`, `pixel`,
+  `update_pixel`, `share_pixel`, `pixel_stats` and `event_match_quality` manage the pixels on
+  an ad account, `custom_conversions`, `create_custom_conversion`, `custom_conversion`,
+  `update_custom_conversion` and `delete_custom_conversion` the custom conversions, and
+  `conversion_batches` reads stored conversion batches with hashed identifiers only.
+- `send_conversions(&UploadConversions, idempotency_key)` sends through
+  `POST /ads/conversions/events` with the required `Idempotency-Key` header; a repeat answers
+  the stored batch with `replayed: true`.
+- `ConversionEvent` gains `event_id`, `action_source` (`ActionSource`), `source_url`,
+  `external_id`, `client_ip_address`, `client_user_agent`, `click_id`, `browser_id` and
+  `content_ids`, with builders for each.
+
+### Changed
+
+- `upload_conversions` returns `ConversionUploadResult` (`id`, `accepted`, `event_count`,
+  `replayed`) instead of the bare accepted count. `ConversionsAccepted` is a deprecated alias
+  of the new type.
+
 ## 0.3.0 - 2026-10-18
 
 ### Added
