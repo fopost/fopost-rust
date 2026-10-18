@@ -38,7 +38,7 @@ struct InWorkspace<'a, T: Serialize> {
 }
 
 fn workspace_query(workspace_id: &str) -> Query {
-    vec![("workspaceId", workspace_id.to_string())]
+    vec![("workspace_id", workspace_id.to_string())]
 }
 
 fn status_list<S: ToString>(statuses: &[S]) -> Option<String> {
@@ -55,7 +55,7 @@ impl Blog<'_> {
     /// Where articles publish, what the blog is for, how often it is planned
     /// and the last keyword research run.
     pub async fn get_settings(&self, workspace_id: &str) -> Result<BlogSettings> {
-        let body: Envelope<BlogSettings> = self
+        let body: BlogSettings = self
             .http
             .send::<_, ()>(
                 Method::GET,
@@ -64,7 +64,7 @@ impl Blog<'_> {
                 None,
             )
             .await?;
-        Ok(body.data)
+        Ok(body)
     }
 
     /// Patch the settings. The answer carries `website_secret` only when this
@@ -90,7 +90,7 @@ impl Blog<'_> {
 
     /// Issue a new website secret. The old one stops verifying at once.
     pub async fn rotate_website_secret(&self, workspace_id: &str) -> Result<BlogWebsiteSecret> {
-        let body: Envelope<BlogWebsiteSecret> = self
+        let body: BlogWebsiteSecret = self
             .http
             .send(
                 Method::POST,
@@ -99,14 +99,14 @@ impl Blog<'_> {
                 Some(&serde_json::json!({ "workspaceId": workspace_id })),
             )
             .await?;
-        Ok(body.data)
+        Ok(body)
     }
 
     /// Send a signed `article.test` delivery to `website_url`. A website that
-    /// does not answer 2xx comes back as an `Error::Api` with status 502
-    /// and the same `{ok, status, error}` shape in its body.
+    /// does not answer 2xx comes back as an `Error::Api` with status 502,
+    /// code `website_test_failed` and the site's `http_status` in its body.
     pub async fn test_website(&self, workspace_id: &str) -> Result<BlogWebsiteTest> {
-        let body: Envelope<BlogWebsiteTest> = self
+        let body: BlogWebsiteTest = self
             .http
             .send(
                 Method::POST,
@@ -115,7 +115,7 @@ impl Blog<'_> {
                 Some(&serde_json::json!({ "workspaceId": workspace_id })),
             )
             .await?;
-        Ok(body.data)
+        Ok(body)
     }
 
     /// The keyword plan, optionally narrowed by status.
@@ -142,7 +142,7 @@ impl Blog<'_> {
         workspace_id: &str,
         params: &SuggestBlogSeeds,
     ) -> Result<Vec<String>> {
-        let body: Envelope<BlogSeedSuggestions> = self
+        let body: BlogSeedSuggestions = self
             .http
             .send(
                 Method::POST,
@@ -154,7 +154,7 @@ impl Blog<'_> {
                 }),
             )
             .await?;
-        Ok(body.data.seeds)
+        Ok(body.seeds)
     }
 
     /// Queue a research run. Results land as `suggested` keywords and never
@@ -182,7 +182,7 @@ impl Blog<'_> {
         workspace_id: &str,
         keyword: &AddBlogKeyword,
     ) -> Result<BlogKeyword> {
-        let body: Envelope<BlogKeyword> = self
+        let body: BlogKeyword = self
             .http
             .send(
                 Method::POST,
@@ -194,7 +194,7 @@ impl Blog<'_> {
                 }),
             )
             .await?;
-        Ok(body.data)
+        Ok(body)
     }
 
     /// Change a keyword's status or planned date. Setting it to `planned`
@@ -205,7 +205,7 @@ impl Blog<'_> {
         id: &str,
         changes: &UpdateBlogKeyword,
     ) -> Result<BlogKeyword> {
-        let body: Envelope<BlogKeyword> = self
+        let body: BlogKeyword = self
             .http
             .send(
                 Method::PATCH,
@@ -214,7 +214,7 @@ impl Blog<'_> {
                 Some(changes),
             )
             .await?;
-        Ok(body.data)
+        Ok(body)
     }
 
     /// Remove a keyword from the plan.
@@ -254,7 +254,7 @@ impl Blog<'_> {
         workspace_id: &str,
         request: &RequestBlogArticle,
     ) -> Result<BlogArticle> {
-        let body: Envelope<BlogArticle> = self
+        let body: BlogArticle = self
             .http
             .send(
                 Method::POST,
@@ -266,12 +266,12 @@ impl Blog<'_> {
                 }),
             )
             .await?;
-        Ok(body.data)
+        Ok(body)
     }
 
     /// One article with its body, outline, brief and images.
     pub async fn get_article(&self, workspace_id: &str, id: &str) -> Result<BlogArticleFull> {
-        let body: Envelope<BlogArticleFull> = self
+        let body: BlogArticleFull = self
             .http
             .send::<_, ()>(
                 Method::GET,
@@ -280,7 +280,7 @@ impl Blog<'_> {
                 None,
             )
             .await?;
-        Ok(body.data)
+        Ok(body)
     }
 
     /// Edit an article. One still being written or already publishing answers
@@ -292,7 +292,7 @@ impl Blog<'_> {
         id: &str,
         changes: &UpdateBlogArticle,
     ) -> Result<BlogArticleFull> {
-        let body: Envelope<BlogArticleFull> = self
+        let body: BlogArticleFull = self
             .http
             .send(
                 Method::PATCH,
@@ -301,7 +301,7 @@ impl Blog<'_> {
                 Some(changes),
             )
             .await?;
-        Ok(body.data)
+        Ok(body)
     }
 
     /// Write the article again from its brief. Needs the `ai` scope.
@@ -347,7 +347,7 @@ impl Blog<'_> {
         id: &str,
         action: &str,
     ) -> Result<BlogArticle> {
-        let body: Envelope<BlogArticle> = self
+        let body: BlogArticle = self
             .http
             .send::<_, ()>(
                 Method::POST,
@@ -356,6 +356,6 @@ impl Blog<'_> {
                 None,
             )
             .await?;
-        Ok(body.data)
+        Ok(body)
     }
 }

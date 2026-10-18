@@ -1,8 +1,10 @@
 //! Blog — keyword planning, article drafting and publishing to a website.
 //!
-//! An article goes to a website; a post goes to a social network. Every wire
-//! field here is camelCase, and `workspaceId` travels as a query parameter on
-//! the `{id}` routes and as a body field on the collection routes.
+//! An article goes to a website; a post goes to a social network. Responses
+//! are snake_case and request bodies camelCase, as the API defines them. The
+//! workspace travels as `workspace_id` on the query string for reads and the
+//! `{id}` routes, and as `workspaceId` in the body for the collection writes.
+//! The `article.published` webhook payload is camelCase.
 
 use serde::{Deserialize, Serialize};
 
@@ -92,7 +94,7 @@ string_enum! {
 
 /// The last keyword research run.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BlogPlanRun {
     pub status: BlogPlanRunStatus,
     #[serde(default)]
@@ -106,7 +108,7 @@ pub struct BlogPlanRun {
 
 /// A workspace's blog settings.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BlogSettings {
     #[serde(default)]
     pub site_url: Option<String>,
@@ -167,9 +169,9 @@ pub struct BlogSettings {
 /// secret when this patch set `website_url` for the first time. It is shown
 /// once; store it, it signs every delivery to the website.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BlogSettingsUpdated {
-    #[serde(rename = "data")]
+    #[serde(flatten)]
     pub settings: BlogSettings,
     #[serde(default)]
     pub website_secret: Option<String>,
@@ -177,22 +179,18 @@ pub struct BlogSettingsUpdated {
 
 /// The answer to `POST /blog/settings/website-secret`.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BlogWebsiteSecret {
     pub website_secret: String,
 }
 
 /// The answer to `POST /blog/settings/website-test`.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BlogWebsiteTest {
+    /// What the website answered.
     #[serde(default)]
-    pub ok: bool,
-    /// The HTTP status the website answered, when it answered at all.
-    #[serde(default)]
-    pub status: Option<u16>,
-    #[serde(default)]
-    pub error: Option<String>,
+    pub http_status: Option<u16>,
 }
 
 /// The body of `PATCH /blog/settings`. Only the fields you set are sent;
@@ -336,7 +334,7 @@ impl UpdateBlogSettings {
 
 /// A keyword on the plan.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BlogKeyword {
     pub id: String,
     pub keyword: String,
@@ -515,8 +513,10 @@ impl UpdateBlogKeyword {
 
 /// One image on an article.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BlogArticleImage {
+    // The webhook payload spells it camelCase.
+    #[serde(alias = "mediaId")]
     pub media_id: String,
     pub url: String,
     #[serde(default)]
@@ -529,7 +529,7 @@ pub struct BlogArticleImage {
 
 /// An article as the list endpoint returns it: metadata without the body.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BlogArticle {
     pub id: String,
     pub title: String,
@@ -583,7 +583,7 @@ impl BlogArticleOrigin {
 
 /// An article with its body, outline, brief and images.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BlogArticleFull {
     #[serde(flatten)]
     pub article: BlogArticle,
