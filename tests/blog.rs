@@ -1,40 +1,48 @@
-//! Blog: one call per route group, pinning the path, the camelCase workspace
-//! key on the query and in the body, and the envelope each endpoint uses.
+//! Blog: one call per route group, pinning the path, `workspace_id` on the
+//! query, `workspaceId` in the body, and the envelope each endpoint uses.
 
 mod common;
 
 use common::client;
 use fopost::models::{
-    AddBlogKeyword, BlogArticleStatus, BlogKeywordStatus, BlogTargetKind, ListBlogArticles,
-    ListBlogKeywords, PlanBlogKeywords, RequestBlogArticle, UpdateBlogArticle, UpdateBlogKeyword,
-    UpdateBlogSettings,
+    AddBlogKeyword, BlogArticleStatus, BlogGoal, BlogKeywordStatus, BlogPlanRunStatus,
+    BlogTargetKind, ListBlogArticles, ListBlogKeywords, PlanBlogKeywords, RequestBlogArticle,
+    SuggestBlogSeeds, UpdateBlogArticle, UpdateBlogKeyword, UpdateBlogSettings,
 };
 use serde_json::json;
-use wiremock::matchers::{body_json, method, path, query_param};
+use wiremock::matchers::{body_json, method, path, query_param, query_param_is_missing};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn settings_fixture() -> serde_json::Value {
     json!({
-        "siteUrl": "https://yourbrand.com",
+        "site_url": "https://yourbrand.com",
         "topic": "running shoes",
         "audience": null,
+        "goal": "leads",
+        "focus_topics": "trail running gear",
+        "avoid_topics": "competitor brands",
         "language": "en",
-        "locationCode": 2840,
-        "cadencePerWeek": 2,
-        "reviewHoldDays": 3,
-        "autoPublish": false,
-        "imageTier": "standard",
-        "inBodyImages": 1,
-        "minWords": 800,
-        "maxWords": 1500,
-        "brandVoiceId": null,
-        "targetKind": "website",
-        "targetAccountId": null,
-        "targetPlatform": null,
-        "websiteUrl": "https://yourbrand.com/api/fopost",
-        "hasWebsiteSecret": true,
-        "keywordDataAvailable": true,
-        "updatedAt": "2026-10-01T10:00:00.000Z"
+        "location_code": 2840,
+        "cadence_per_week": 2,
+        "review_hold_days": 3,
+        "image_tier": "standard",
+        "in_body_images": 1,
+        "min_words": 800,
+        "max_words": 1500,
+        "brand_voice_id": null,
+        "target_kind": "website",
+        "target_account_id": null,
+        "target_platform": null,
+        "website_url": "https://yourbrand.com/api/fopost",
+        "has_website_secret": true,
+        "plan_run": {
+            "status": "done",
+            "error": null,
+            "added": 12,
+            "finished_at": "2026-10-01T10:05:00.000Z"
+        },
+        "keyword_data_available": true,
+        "updated_at": "2026-10-01T10:00:00.000Z"
     })
 }
 
@@ -42,14 +50,15 @@ fn keyword_fixture() -> serde_json::Value {
     json!({
         "id": "kw_1",
         "keyword": "trail running shoes",
-        "searchVolume": 1200,
+        "search_volume": 1200,
         "difficulty": 34,
         "cpc": 1.25,
         "intent": "commercial",
         "source": "provider",
         "status": "planned",
-        "plannedFor": "2026-10-20",
-        "createdAt": "2026-10-01T10:00:00.000Z"
+        "planned_for": "2026-10-20",
+        "fit_reason": "Buyers compare shoes before they sign up.",
+        "created_at": "2026-10-01T10:00:00.000Z"
     })
 }
 
@@ -60,20 +69,20 @@ fn article_fixture(status: &str) -> serde_json::Value {
         "slug": "best-trail-running-shoes",
         "keyword": "trail running shoes",
         "excerpt": null,
-        "metaTitle": null,
-        "metaDescription": null,
-        "featuredImage": { "mediaId": "m_1", "url": "https://cdn.example/f.jpg", "alt": "Shoes" },
+        "meta_title": null,
+        "meta_description": null,
+        "featured_image": { "media_id": "m_1", "url": "https://cdn.example/f.jpg", "alt": "Shoes" },
         "tags": ["running"],
-        "wordCount": 1200,
+        "word_count": 1200,
         "status": status,
         "origin": "user",
-        "reviewUntil": null,
-        "publishAt": null,
-        "publishedAt": null,
-        "publishedUrl": null,
+        "review_until": null,
+        "publish_at": null,
+        "published_at": null,
+        "published_url": null,
         "error": null,
-        "createdAt": "2026-10-01T10:00:00.000Z",
-        "updatedAt": "2026-10-01T10:00:00.000Z"
+        "created_at": "2026-10-01T10:00:00.000Z",
+        "updated_at": "2026-10-01T10:00:00.000Z"
     })
 }
 
@@ -82,10 +91,9 @@ async fn settings_round_trip() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/v1/blog/settings"))
-        .and(query_param("workspaceId", "ws_1"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(json!({ "data": settings_fixture() })),
-        )
+        .and(query_param("workspace_id", "ws_1"))
+        .and(query_param_is_missing("workspaceId"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(settings_fixture()))
         .expect(1)
         .mount(&server)
         .await;
@@ -95,12 +103,16 @@ async fn settings_round_trip() {
             "workspaceId": "ws_1",
             "websiteUrl": "https://yourbrand.com/api/fopost",
             "targetKind": "website",
-            "brandVoiceId": null
+            "brandVoiceId": null,
+            "goal": "leads",
+            "focusTopics": "trail running gear",
+            "avoidTopics": null
         })))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "data": settings_fixture(),
-            "websiteSecret": "whsec_abc"
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json({
+            let mut body = settings_fixture();
+            body["website_secret"] = json!("whsec_abc");
+            body
+        }))
         .expect(1)
         .mount(&server)
         .await;
@@ -108,8 +120,7 @@ async fn settings_round_trip() {
         .and(path("/v1/blog/settings/website-secret"))
         .and(body_json(json!({ "workspaceId": "ws_1" })))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(json!({ "data": { "websiteSecret": "whsec_new" } })),
+            ResponseTemplate::new(200).set_body_json(json!({ "website_secret": "whsec_new" })),
         )
         .expect(1)
         .mount(&server)
@@ -117,9 +128,7 @@ async fn settings_round_trip() {
     Mock::given(method("POST"))
         .and(path("/v1/blog/settings/website-test"))
         .and(body_json(json!({ "workspaceId": "ws_1" })))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "data": { "ok": true, "status": 200, "error": null }
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "http_status": 200 })))
         .expect(1)
         .mount(&server)
         .await;
@@ -131,6 +140,12 @@ async fn settings_round_trip() {
     assert_eq!(settings.target_kind, Some(BlogTargetKind::Website));
     assert_eq!(settings.cadence_per_week, 2);
     assert!(settings.has_website_secret);
+    assert_eq!(settings.goal, Some(BlogGoal::Leads));
+    assert_eq!(settings.focus_topics.as_deref(), Some("trail running gear"));
+    assert_eq!(settings.avoid_topics.as_deref(), Some("competitor brands"));
+    let run = settings.plan_run.as_ref().unwrap();
+    assert_eq!(run.status, BlogPlanRunStatus::Done);
+    assert_eq!(run.added, Some(12));
 
     let updated = blog
         .update_settings(
@@ -138,7 +153,10 @@ async fn settings_round_trip() {
             &UpdateBlogSettings::new()
                 .website_url(Some("https://yourbrand.com/api/fopost"))
                 .target_kind(Some(BlogTargetKind::Website))
-                .brand_voice_id(None::<String>),
+                .brand_voice_id(None::<String>)
+                .goal(Some(BlogGoal::Leads))
+                .focus_topics(Some("trail running gear"))
+                .avoid_topics(None::<String>),
         )
         .await
         .unwrap();
@@ -149,8 +167,7 @@ async fn settings_round_trip() {
     assert_eq!(rotated.website_secret, "whsec_new");
 
     let test = blog.test_website("ws_1").await.unwrap();
-    assert!(test.ok);
-    assert_eq!(test.status, Some(200));
+    assert_eq!(test.http_status, Some(200));
 }
 
 #[tokio::test]
@@ -158,7 +175,7 @@ async fn keywords_round_trip() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/v1/blog/keywords"))
-        .and(query_param("workspaceId", "ws_1"))
+        .and(query_param("workspace_id", "ws_1"))
         .and(query_param("status", "suggested,planned"))
         .and(query_param("limit", "50"))
         .respond_with(
@@ -172,9 +189,7 @@ async fn keywords_round_trip() {
         .and(body_json(
             json!({ "workspaceId": "ws_1", "seeds": ["running"] }),
         ))
-        .respond_with(
-            ResponseTemplate::new(202).set_body_json(json!({ "data": { "status": "queued" } })),
-        )
+        .respond_with(ResponseTemplate::new(202).set_body_json(json!({ "status": "queued" })))
         .expect(1)
         .mount(&server)
         .await;
@@ -185,27 +200,23 @@ async fn keywords_round_trip() {
             "keyword": "trail running shoes",
             "plannedFor": "2026-10-20"
         })))
-        .respond_with(
-            ResponseTemplate::new(201).set_body_json(json!({ "data": keyword_fixture() })),
-        )
+        .respond_with(ResponseTemplate::new(201).set_body_json(keyword_fixture()))
         .expect(1)
         .mount(&server)
         .await;
     Mock::given(method("PATCH"))
         .and(path("/v1/blog/keywords/kw_1"))
-        .and(query_param("workspaceId", "ws_1"))
+        .and(query_param("workspace_id", "ws_1"))
         .and(body_json(
             json!({ "status": "dismissed", "plannedFor": null }),
         ))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(json!({ "data": keyword_fixture() })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(keyword_fixture()))
         .expect(1)
         .mount(&server)
         .await;
     Mock::given(method("DELETE"))
         .and(path("/v1/blog/keywords/kw_1"))
-        .and(query_param("workspaceId", "ws_1"))
+        .and(query_param("workspace_id", "ws_1"))
         .respond_with(ResponseTemplate::new(204))
         .expect(1)
         .mount(&server)
@@ -227,6 +238,10 @@ async fn keywords_round_trip() {
     assert_eq!(keywords.len(), 1);
     assert_eq!(keywords[0].status, BlogKeywordStatus::Planned);
     assert_eq!(keywords[0].search_volume, Some(1200));
+    assert_eq!(
+        keywords[0].fit_reason.as_deref(),
+        Some("Buyers compare shoes before they sign up.")
+    );
 
     blog.plan_keywords("ws_1", &PlanBlogKeywords::new().seeds(["running"]))
         .await
@@ -255,11 +270,94 @@ async fn keywords_round_trip() {
 }
 
 #[tokio::test]
+async fn suggest_seeds_sends_seeds_and_prompt() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/blog/keywords/suggest"))
+        .and(body_json(json!({
+            "workspaceId": "ws_1",
+            "seeds": ["trail running"],
+            "prompt": "Beginners, not racers"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "seeds": ["trail running shoes", "waterproof trail shoes"]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/blog/keywords/suggest"))
+        .and(body_json(json!({ "workspaceId": "ws_2" })))
+        .respond_with(ResponseTemplate::new(402).set_body_json(json!({
+            "error": "insufficient_credits",
+            "message": "Balance is empty"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+
+    let seeds = client
+        .blog()
+        .suggest_seeds(
+            "ws_1",
+            &SuggestBlogSeeds::new()
+                .seeds(["trail running"])
+                .prompt("Beginners, not racers"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(seeds, vec!["trail running shoes", "waterproof trail shoes"]);
+
+    let err = client
+        .blog()
+        .suggest_seeds("ws_2", &SuggestBlogSeeds::new())
+        .await
+        .unwrap_err();
+    assert_eq!(err.status(), Some(402));
+}
+
+#[tokio::test]
+async fn submit_article_moves_it_to_review() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/blog/articles/art_1/submit"))
+        .and(query_param("workspace_id", "ws_1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(article_fixture("in_review")))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/blog/articles/art_2/submit"))
+        .respond_with(ResponseTemplate::new(409).set_body_json(json!({
+            "error": "invalid_state",
+            "message": "Only a draft can be submitted for approval"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+
+    let article = client.blog().submit_article("ws_1", "art_1").await.unwrap();
+    assert_eq!(article.status, BlogArticleStatus::InReview);
+
+    let err = client
+        .blog()
+        .submit_article("ws_1", "art_2")
+        .await
+        .unwrap_err();
+    assert_eq!(err.status(), Some(409));
+    assert_eq!(err.code(), Some("invalid_state"));
+}
+
+#[tokio::test]
 async fn articles_round_trip() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/v1/blog/articles"))
-        .and(query_param("workspaceId", "ws_1"))
+        .and(query_param("workspace_id", "ws_1"))
         .and(query_param("status", "draft"))
         .respond_with(
             ResponseTemplate::new(200).set_body_json(json!({ "data": [article_fixture("draft")] })),
@@ -274,49 +372,44 @@ async fn articles_round_trip() {
             "keywordId": "kw_1",
             "instructions": "Compare three models"
         })))
-        .respond_with(
-            ResponseTemplate::new(202).set_body_json(json!({ "data": article_fixture("queued") })),
-        )
+        .respond_with(ResponseTemplate::new(202).set_body_json(article_fixture("queued")))
         .expect(1)
         .mount(&server)
         .await;
     let mut full = article_fixture("draft");
-    full["bodyMarkdown"] = json!("# Shoes");
-    full["bodyHtml"] = json!("<h1>Shoes</h1>");
+    full["body_markdown"] = json!("# Shoes");
+    full["body_html"] = json!("<h1>Shoes</h1>");
     full["outline"] = json!(["Intro", "Picks"]);
-    full["images"] = json!([{ "mediaId": "m_2", "url": "https://cdn.example/1.jpg", "alt": "A", "position": 1 }]);
+    full["images"] = json!([{ "media_id": "m_2", "url": "https://cdn.example/1.jpg", "alt": "A", "position": 1 }]);
     Mock::given(method("GET"))
         .and(path("/v1/blog/articles/art_1"))
-        .and(query_param("workspaceId", "ws_1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": full })))
+        .and(query_param("workspace_id", "ws_1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&full))
         .expect(1)
         .mount(&server)
         .await;
     Mock::given(method("PATCH"))
         .and(path("/v1/blog/articles/art_1"))
-        .and(query_param("workspaceId", "ws_1"))
+        .and(query_param("workspace_id", "ws_1"))
         .and(body_json(
             json!({ "title": "New title", "publishAt": null }),
         ))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": full })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&full))
         .expect(1)
         .mount(&server)
         .await;
     for action in ["regenerate", "publish", "reject"] {
         Mock::given(method("POST"))
             .and(path(format!("/v1/blog/articles/art_1/{action}")))
-            .and(query_param("workspaceId", "ws_1"))
-            .respond_with(
-                ResponseTemplate::new(202)
-                    .set_body_json(json!({ "data": article_fixture("queued") })),
-            )
+            .and(query_param("workspace_id", "ws_1"))
+            .respond_with(ResponseTemplate::new(202).set_body_json(article_fixture("queued")))
             .expect(1)
             .mount(&server)
             .await;
     }
     Mock::given(method("DELETE"))
         .and(path("/v1/blog/articles/art_1"))
-        .and(query_param("workspaceId", "ws_1"))
+        .and(query_param("workspace_id", "ws_1"))
         .respond_with(ResponseTemplate::new(204))
         .expect(1)
         .mount(&server)

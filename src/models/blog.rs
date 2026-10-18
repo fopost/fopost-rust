@@ -1,8 +1,10 @@
 //! Blog — keyword planning, article drafting and publishing to a website.
 //!
-//! An article goes to a website; a post goes to a social network. Every wire
-//! field here is camelCase, and `workspaceId` travels as a query parameter on
-//! the `{id}` routes and as a body field on the collection routes.
+//! An article goes to a website; a post goes to a social network. Responses
+//! are snake_case and request bodies camelCase, as the API defines them. The
+//! workspace travels as `workspace_id` on the query string for reads and the
+//! `{id}` routes, and as `workspaceId` in the body for the collection writes.
+//! The `article.published` webhook payload is camelCase.
 
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +16,7 @@ string_enum! {
         Queued => "queued",
         Writing => "writing",
         Draft => "draft",
+        InReview => "in_review",
         Scheduled => "scheduled",
         Publishing => "publishing",
         Published => "published",
@@ -60,6 +63,27 @@ string_enum! {
 }
 
 string_enum! {
+    /// What the blog is for; steers suggested terms and keyword ranking.
+    pub enum BlogGoal {
+        Traffic => "traffic",
+        Leads => "leads",
+        Sales => "sales",
+        Signups => "signups",
+        Authority => "authority",
+    }
+}
+
+string_enum! {
+    /// Where a keyword research run stands.
+    pub enum BlogPlanRunStatus {
+        Queued => "queued",
+        Running => "running",
+        Done => "done",
+        Failed => "failed",
+    }
+}
+
+string_enum! {
     /// The image quality tier used for article imagery.
     pub enum BlogImageTier {
         Draft => "draft",
@@ -68,9 +92,23 @@ string_enum! {
     }
 }
 
+/// The last keyword research run.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct BlogPlanRun {
+    pub status: BlogPlanRunStatus,
+    #[serde(default)]
+    pub error: Option<String>,
+    /// New keywords the run found.
+    #[serde(default)]
+    pub added: Option<i64>,
+    #[serde(default)]
+    pub finished_at: Option<String>,
+}
+
 /// A workspace's blog settings.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BlogSettings {
     #[serde(default)]
     pub site_url: Option<String>,
@@ -79,17 +117,23 @@ pub struct BlogSettings {
     #[serde(default)]
     pub audience: Option<String>,
     #[serde(default)]
+    pub goal: Option<BlogGoal>,
+    /// What the blog wants to write about.
+    #[serde(default)]
+    pub focus_topics: Option<String>,
+    /// What the blog never writes about.
+    #[serde(default)]
+    pub avoid_topics: Option<String>,
+    #[serde(default)]
     pub language: String,
     #[serde(default)]
     pub location_code: Option<i64>,
     /// Articles planned per week; 0 turns planning off.
     #[serde(default)]
     pub cadence_per_week: u32,
-    /// Days a draft waits for review before it may auto-publish.
+    /// Days before its planned date that a picked keyword starts being written.
     #[serde(default)]
     pub review_hold_days: u32,
-    #[serde(default)]
-    pub auto_publish: bool,
     #[serde(default)]
     pub image_tier: Option<BlogImageTier>,
     #[serde(default)]
@@ -111,6 +155,9 @@ pub struct BlogSettings {
     pub website_url: Option<String>,
     #[serde(default)]
     pub has_website_secret: bool,
+    /// The last keyword research run; `None` before the first.
+    #[serde(default)]
+    pub plan_run: Option<BlogPlanRun>,
     /// Whether search volume and difficulty can be fetched on this deployment.
     #[serde(default)]
     pub keyword_data_available: bool,
@@ -122,9 +169,9 @@ pub struct BlogSettings {
 /// secret when this patch set `website_url` for the first time. It is shown
 /// once; store it, it signs every delivery to the website.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BlogSettingsUpdated {
-    #[serde(rename = "data")]
+    #[serde(flatten)]
     pub settings: BlogSettings,
     #[serde(default)]
     pub website_secret: Option<String>,
@@ -132,22 +179,18 @@ pub struct BlogSettingsUpdated {
 
 /// The answer to `POST /blog/settings/website-secret`.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BlogWebsiteSecret {
     pub website_secret: String,
 }
 
 /// The answer to `POST /blog/settings/website-test`.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BlogWebsiteTest {
+    /// What the website answered.
     #[serde(default)]
-    pub ok: bool,
-    /// The HTTP status the website answered, when it answered at all.
-    #[serde(default)]
-    pub status: Option<u16>,
-    #[serde(default)]
-    pub error: Option<String>,
+    pub http_status: Option<u16>,
 }
 
 /// The body of `PATCH /blog/settings`. Only the fields you set are sent;
@@ -162,6 +205,12 @@ pub struct UpdateBlogSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audience: Option<Option<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub goal: Option<Option<BlogGoal>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focus_topics: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avoid_topics: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location_code: Option<i64>,
@@ -171,8 +220,6 @@ pub struct UpdateBlogSettings {
     /// 0 to 14.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub review_hold_days: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub auto_publish: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_tier: Option<BlogImageTier>,
     /// 0 to 3.
@@ -213,6 +260,21 @@ impl UpdateBlogSettings {
         self
     }
 
+    pub fn goal(mut self, goal: Option<BlogGoal>) -> Self {
+        self.goal = Some(goal);
+        self
+    }
+
+    pub fn focus_topics(mut self, topics: Option<impl Into<String>>) -> Self {
+        self.focus_topics = Some(topics.map(Into::into));
+        self
+    }
+
+    pub fn avoid_topics(mut self, topics: Option<impl Into<String>>) -> Self {
+        self.avoid_topics = Some(topics.map(Into::into));
+        self
+    }
+
     pub fn language(mut self, language: impl Into<String>) -> Self {
         self.language = Some(language.into());
         self
@@ -230,11 +292,6 @@ impl UpdateBlogSettings {
 
     pub fn review_hold_days(mut self, days: u32) -> Self {
         self.review_hold_days = Some(days);
-        self
-    }
-
-    pub fn auto_publish(mut self, auto_publish: bool) -> Self {
-        self.auto_publish = Some(auto_publish);
         self
     }
 
@@ -277,7 +334,7 @@ impl UpdateBlogSettings {
 
 /// A keyword on the plan.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BlogKeyword {
     pub id: String,
     pub keyword: String,
@@ -297,6 +354,9 @@ pub struct BlogKeyword {
     /// `YYYY-MM-DD`.
     #[serde(default)]
     pub planned_for: Option<String>,
+    /// Why the keyword serves the blog goal.
+    #[serde(default)]
+    pub fit_reason: Option<String>,
     #[serde(default)]
     pub created_at: Option<String>,
 }
@@ -338,10 +398,48 @@ impl ListBlogKeywords {
     }
 }
 
+/// The body of `POST /blog/keywords/suggest`, minus the workspace.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct SuggestBlogSeeds {
+    /// The current terms, to refine. At most 20.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seeds: Option<Vec<String>>,
+    /// Up to 500 characters to steer the suggestions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+}
+
+impl SuggestBlogSeeds {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn seeds<I, S>(mut self, seeds: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.seeds = Some(seeds.into_iter().map(Into::into).collect());
+        self
+    }
+
+    pub fn prompt(mut self, prompt: impl Into<String>) -> Self {
+        self.prompt = Some(prompt.into());
+        self
+    }
+}
+
+/// The answer to `POST /blog/keywords/suggest`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BlogSeedSuggestions {
+    #[serde(default)]
+    pub seeds: Vec<String>,
+}
+
 /// The body of `POST /blog/keywords/plan`, minus the workspace.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct PlanBlogKeywords {
-    /// Terms to grow the plan from. Unset plans from the settings' topic.
+    /// Terms to research. Unset derives them from the blog settings.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seeds: Option<Vec<String>>,
 }
@@ -386,7 +484,8 @@ impl AddBlogKeyword {
 }
 
 /// The body of `PATCH /blog/keywords/{id}`. Only what is set is sent;
-/// `planned_for(None)` takes the keyword off the calendar.
+/// `status(Planned)` picks the keyword and gives it the next free date, and
+/// `planned_for(None)` takes it off the calendar.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBlogKeyword {
@@ -414,8 +513,10 @@ impl UpdateBlogKeyword {
 
 /// One image on an article.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BlogArticleImage {
+    // The webhook payload spells it camelCase.
+    #[serde(alias = "mediaId")]
     pub media_id: String,
     pub url: String,
     #[serde(default)]
@@ -428,7 +529,7 @@ pub struct BlogArticleImage {
 
 /// An article as the list endpoint returns it: metadata without the body.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BlogArticle {
     pub id: String,
     pub title: String,
@@ -452,7 +553,6 @@ pub struct BlogArticle {
     pub status: BlogArticleStatus,
     #[serde(default = "BlogArticleOrigin::user")]
     pub origin: BlogArticleOrigin,
-    /// When the review hold ends and the draft may auto-publish.
     #[serde(default)]
     pub review_until: Option<String>,
     #[serde(default)]
@@ -483,7 +583,7 @@ impl BlogArticleOrigin {
 
 /// An article with its body, outline, brief and images.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BlogArticleFull {
     #[serde(flatten)]
     pub article: BlogArticle,
@@ -600,7 +700,8 @@ pub struct UpdateBlogArticle {
     pub body_markdown: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
-    /// Puts the draft on the calendar; `Some(None)` returns it to review.
+    /// Puts an article in review on the calendar; a draft answers 409 until
+    /// it is submitted. `Some(None)` returns it to draft.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub publish_at: Option<Option<String>>,
 }
