@@ -1,8 +1,8 @@
 //! `client.inbox()` — comments, mentions and direct messages on connected accounts.
 //!
 //! Every call needs the `inbox` scope. The calls that act on the platform as the account
-//! (like, pin, react, edit, start a conversation, typing, a reply with media or quick
-//! replies, deleting our own reply) also need the `publish` scope.
+//! (like, repost, bookmark, pin, react, edit, start a conversation, typing, a reply with
+//! media or quick replies, deleting our own reply) also need the `publish` scope.
 
 use reqwest::Method;
 use serde::Serialize;
@@ -13,7 +13,8 @@ use crate::models::{
     ApprovalDecision, InboxAccount, InboxApproval, InboxConversation, InboxConversationStarted,
     InboxHandover, InboxItem, InboxPage, InboxPlatform, InboxRefreshResult, InboxReply,
     InboxReplyResult, InboxThread, ListInbox, ListInboxConversations, ListInboxThreads,
-    MarkThreadRead, StartInboxConversation, UpdateInboxItem, VoteInboxItem,
+    MarkThreadRead, StartInboxConversation, UpdateInboxItem, VoteInboxItem, XPost, XSearchPage,
+    XSearchParams,
 };
 
 /// The inbox.
@@ -273,6 +274,46 @@ impl Inbox<'_> {
         Ok(body.data)
     }
 
+    /// Repost an item to the account's own timeline (X). Only where `can_repost` is
+    /// true; also needs `publish`. A `402` with code `platform_balance_spent` means the
+    /// network's own pay-per-use balance is empty, and a `409` with `reconnect_required`
+    /// means the account was connected before the repost permission was asked for.
+    pub async fn repost(&self, id: &str) -> Result<InboxItem> {
+        let body: Envelope<InboxItem> = self
+            .http
+            .send::<_, ()>(Method::POST, &format!("/inbox/{id}/repost"), None, None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Take our repost back. Only where `can_repost` is true; also needs `publish`.
+    pub async fn unrepost(&self, id: &str) -> Result<InboxItem> {
+        let body: Envelope<InboxItem> = self
+            .http
+            .send::<_, ()>(Method::POST, &format!("/inbox/{id}/unrepost"), None, None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Bookmark an item on the account (X). Only where `can_bookmark` is true; also needs
+    /// `publish`. Same error family as `repost`.
+    pub async fn bookmark(&self, id: &str) -> Result<InboxItem> {
+        let body: Envelope<InboxItem> = self
+            .http
+            .send::<_, ()>(Method::POST, &format!("/inbox/{id}/bookmark"), None, None)
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Remove our bookmark. Only where `can_bookmark` is true; also needs `publish`.
+    pub async fn unbookmark(&self, id: &str) -> Result<InboxItem> {
+        let body: Envelope<InboxItem> = self
+            .http
+            .send::<_, ()>(Method::POST, &format!("/inbox/{id}/unbookmark"), None, None)
+            .await?;
+        Ok(body.data)
+    }
+
     /// Vote up or down where the network ranks by votes (Reddit), or take an earlier
     /// vote back with `none`. Only where `can_vote` is true; also needs `publish`. An
     /// upvote is the same call `like` makes, so `liked` moves with it.
@@ -448,5 +489,35 @@ impl Inbox<'_> {
             )
             .await?;
         Ok(body.data)
+    }
+
+    /// One X post by its numeric id, read live with `account_id`'s token. `404` when X
+    /// has no such post. Every call is an X API call metered to the workspace.
+    pub async fn get_x_post(&self, post_id: &str, account_id: &str) -> Result<XPost> {
+        let body: Envelope<XPost> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/x/posts/{post_id}"),
+                Some(vec![("account_id", account_id.to_string())]),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// Recent X posts matching `q`, read live with the account's token. Pass
+    /// `meta.next_token` back as `next_token` for the next page. Every call is an X API
+    /// call metered to the workspace.
+    pub async fn search_x_posts(&self, params: &XSearchParams) -> Result<XSearchPage> {
+        let mut query: Query = vec![
+            ("account_id", params.account_id.clone()),
+            ("q", params.q.clone()),
+        ];
+        push_opt(&mut query, "max_results", params.max_results);
+        push_opt(&mut query, "next_token", params.next_token.as_ref());
+        self.http
+            .send::<XSearchPage, ()>(Method::GET, "/x/search", Some(query), None)
+            .await
     }
 }
