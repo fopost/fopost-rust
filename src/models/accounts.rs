@@ -1141,3 +1141,12 @@ impl SetRedditDefaultSubreddit {
         Self { subreddit }
     }
 }
+
+/// The answer to `POST /accounts/{id}/x/follow` and `/x/unfollow`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct XFollowResult {
+    pub account_id: String,
+    /// The X user id that was followed or unfollowed.
+    pub user_id: String,
+    pub following: bool,
+}

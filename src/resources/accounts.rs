@@ -17,8 +17,8 @@ use crate::models::{
     SetRedditDefaultSubreddit, SlackChannel, SlackIdentity, SlackMember, TelegramBotCommand,
     TelegramBotCommands, TelegramConnectCode, TelegramConnectStatus, TikTokCreatorInfo,
     TikTokMusic, TikTokPlace, TikTokVideoSource, TokenRefreshed, UpdateDiscordIdentity,
-    UpdateSlackIdentity, UploadYouTubeCaptions, WebhookSubscription, YouTubeCaptionTrack,
-    YouTubePlaylist, YouTubeTranscript,
+    UpdateSlackIdentity, UploadYouTubeCaptions, WebhookSubscription, XFollowResult,
+    YouTubeCaptionTrack, YouTubePlaylist, YouTubeTranscript,
 };
 
 /// Connected accounts, their health, and their X communities.
@@ -1341,5 +1341,32 @@ impl Accounts<'_> {
             )
             .await?;
         Ok(body.data)
+    }
+
+    /// Follow an X user from this account. `user_id` is the numeric id X reports. Needs
+    /// `publish`. A `402` with code `platform_balance_spent` means X's own pay-per-use
+    /// balance is empty; a `409` with `reconnect_required` means the account was connected
+    /// before the follow permission was asked for. Metered to the workspace.
+    pub async fn follow_x_user(&self, id: &str, user_id: &str) -> Result<XFollowResult> {
+        self.http
+            .send(
+                Method::POST,
+                &format!("/accounts/{id}/x/follow"),
+                None,
+                Some(&serde_json::json!({ "user_id": user_id })),
+            )
+            .await
+    }
+
+    /// Unfollow an X user from this account. Same rules as `follow_x_user`.
+    pub async fn unfollow_x_user(&self, id: &str, user_id: &str) -> Result<XFollowResult> {
+        self.http
+            .send(
+                Method::POST,
+                &format!("/accounts/{id}/x/unfollow"),
+                None,
+                Some(&serde_json::json!({ "user_id": user_id })),
+            )
+            .await
     }
 }
