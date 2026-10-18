@@ -5,7 +5,7 @@
 mod common;
 
 use common::client;
-use fopost::models::{AnalyticsQuery, MetricChangesQuery, NativePostsQuery};
+use fopost::models::{AnalyticsQuery, InboxAnalyticsQuery, MetricChangesQuery, NativePostsQuery};
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -219,4 +219,49 @@ async fn native_posts_keeps_the_meta_envelope() {
         Some("https://x.com/acme/status/1")
     );
     assert_eq!(page.items[0].metrics.engagements, Some(90));
+}
+
+#[tokio::test]
+async fn inbox_analytics_read_the_whole_report() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/analytics/inbox"))
+        .and(query_param("workspace_id", "ws_1"))
+        .and(query_param("days", "30"))
+        .and(query_param("tz", "Europe/Zagreb"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "totals": { "received": 40, "sent": 25, "answered": 20, "open": 5, "conversations": 12, "median_response_minutes": 42.5 },
+            "deltas": { "received": 10.0, "sent": null, "answered": -5.0 },
+            "series": [{ "date": "2026-10-18", "received": 4, "sent": 2, "answered": 2 }],
+            "by_platform": [{ "platform": "twitter", "received": 30, "sent": 20 }],
+            "by_type": [{ "type": "dm", "count": 15 }],
+            "by_account": [{ "account_id": "acc_1", "platform": "twitter", "username": "yourbrand", "name": "Your Brand", "avatar": null, "received": 30, "sent": 20 }],
+            "response_time": [{ "bucket": "under_1h", "count": 12 }],
+            "heatmap": [{ "weekday": 1, "hour": 9, "count": 3 }],
+            "time_zone": "Europe/Zagreb"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let report = client
+        .analytics()
+        .inbox(&InboxAnalyticsQuery {
+            workspace_id: Some("ws_1"),
+            days: Some(30),
+            tz: Some("Europe/Zagreb"),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(report.totals.received, 40);
+    assert_eq!(report.totals.median_response_minutes, Some(42.5));
+    assert_eq!(report.deltas.sent, None);
+    assert_eq!(report.by_type[0].item_type.as_deref(), Some("dm"));
+    assert_eq!(report.by_account[0].username.as_deref(), Some("yourbrand"));
+    assert_eq!(report.response_time[0].bucket.as_deref(), Some("under_1h"));
+    assert_eq!(report.heatmap[0].hour, 9);
+    assert_eq!(report.time_zone.as_deref(), Some("Europe/Zagreb"));
 }
