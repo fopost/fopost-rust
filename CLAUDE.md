@@ -5,10 +5,10 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 ## What This Is
 
 Crate `fopost` on crates.io — the official Rust client for the FoPost REST API
-(`fopost.com`). Version `0.3.0`. It wraps the API's HTTP surface in resource accessors on
+(`fopost.com`). Version `0.4.0`. It wraps the API's HTTP surface in resource accessors on
 `Client`: `posts()`, `accounts()`, `workspaces()`, `labels()`, `webhooks()`,
 `automations()`, `analytics()`, `media()`, `inbox()`, `contacts()`, `broadcasts()`,
-`sequences()`, `ads()`, `validate()`, `blog()`.
+`sequences()`, `ads()`, `validate()`, `blog()`, `queue()`, `connect_sessions()`, `logs()`.
 
 Edition 2021, `rust-version = "1.88"` (the MSRV CI builds against). Async on `reqwest`
 0.12 + `tokio`; models are `serde`; errors are `thiserror`. Docs at docs.rs/fopost.
@@ -118,7 +118,12 @@ pass-through reads `get_x_post` and `search_x_posts` (`/x/posts/{id}`, `/x/searc
 `inbox()` because they carry the `inbox` scope; `XPost`, `XSearchParams` and `XSearchPage`
 live in `models/inbox.rs`, and the search footer is `{ data, meta: { next_token } }`, a third
 page shape beside `Page<T>` and `InboxPage<T>`. `accounts().follow_x_user`/`unfollow_x_user`
-answer `XFollowResult` bare, with no `{data}` envelope.
+answer `XFollowResult` bare, with no `{data}` envelope. Ads tracking
+(pixels, custom conversions, `upload_conversions`, `send_conversions`, `conversion_batches`)
+needs `ads` only. `send_conversions` is the idempotent `POST /ads/conversions/events` and
+takes the `Idempotency-Key` as a required argument, passed through
+`HttpClient::send_with_headers`; it is not named `send_conversion_events` because that name
+already belongs to the LinkedIn conversion-rule send.
 
 `blog()` covers the `Blog` tag: settings (`posts`), keywords (`posts`, `suggest_seeds`
 and `plan_keywords` are `ai`) and articles (`request_article`/`regenerate_article` are
@@ -130,6 +135,17 @@ beside the payload). `update_settings` decodes the settings plus `website_secret
 `BlogSettingsUpdated`, which flattens `BlogSettings`. `BlogArticleFull` flattens
 `BlogArticle` and derefs to it. The `article.published` webhook payload
 (`BlogArticlePublished`) stays camelCase, so `BlogArticleImage` also accepts `mediaId`.
+
+`queue()` (scope `posts`) is the posting queue: slot CRUD plus `next` and `preview`. A post
+joins it with `CreatePost::queue()` / `UpdatePost::queue()`, which send `schedule: "queue"`
+instead of `schedule_at`. `connect_sessions()` (scope `accounts`) mints hosted connect links;
+the body is camelCase, the answer snake_case, and `url` rides only on creation. `logs()`
+(scope `workspaces`) reads `GET /logs`, a cursor page (`before` ← `meta.next_cursor`) that
+carries a `summary` beside `data`. `webhooks().deliveries`/`delivery`/`redeliver` are the
+delivery log; `redeliver` answers 204. `automations().versions`/`version`/`restore_version`
+read and restore the saved graph versions. Single-object answers on all of these come bare,
+lists in `{data}` — follow the handler, not the neighbour, when adding a sibling.
+`delete_discord_message` answers 204 and returns `()`.
 
 `verify_webhook(raw_body, &WebhookSignature, secret)` in `src/webhook.rs` (re-exported at
 the root) verifies any outbound delivery, including a blog Website target's. It uses

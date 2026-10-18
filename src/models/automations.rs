@@ -285,3 +285,104 @@ impl UpdateAutomation {
         self
     }
 }
+
+/// A node named in a version diff.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AutomationVersionNodeRef {
+    pub id: String,
+    pub kind: String,
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+/// Who saved a version.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AutomationVersionAuthor {
+    pub name: String,
+}
+
+/// One saved version of an automation's graph, as the version list shows it.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AutomationVersion {
+    pub version: i64,
+    #[serde(default)]
+    pub note: Option<String>,
+    #[serde(default)]
+    pub created_by: Option<AutomationVersionAuthor>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub node_count: i64,
+    #[serde(default)]
+    pub nodes_added: Vec<AutomationVersionNodeRef>,
+    #[serde(default)]
+    pub nodes_removed: Vec<AutomationVersionNodeRef>,
+}
+
+/// Where a node sits on the canvas.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkflowLayout {
+    #[serde(default)]
+    pub x: f64,
+    #[serde(default)]
+    pub y: f64,
+}
+
+/// One node of a workflow graph. `config` is echoed back exactly as authored.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkflowNode {
+    pub id: String,
+    pub kind: String,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub config: Option<serde_json::Value>,
+    #[serde(default)]
+    pub position: Option<i64>,
+    #[serde(default)]
+    pub layout: Option<WorkflowLayout>,
+}
+
+/// One edge of a workflow graph.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkflowEdge {
+    pub id: String,
+    pub source: String,
+    #[serde(default)]
+    pub source_handle: Option<String>,
+    pub target: String,
+}
+
+/// The nodes and edges a version holds.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct WorkflowGraph {
+    #[serde(default)]
+    pub nodes: Vec<WorkflowNode>,
+    #[serde(default)]
+    pub edges: Vec<WorkflowEdge>,
+}
+
+/// One version read in full, with its graph.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AutomationVersionDetail {
+    pub version: i64,
+    #[serde(default)]
+    pub note: Option<String>,
+    #[serde(default)]
+    pub created_by: Option<AutomationVersionAuthor>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub graph: WorkflowGraph,
+}
+
+/// What `restore_version` answers with: the new version number and what it holds.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AutomationVersionRestored {
+    /// The new version number.
+    pub version: i64,
+    #[serde(default)]
+    pub graph: WorkflowGraph,
+    #[serde(default)]
+    pub steps: Vec<AutomationStep>,
+}

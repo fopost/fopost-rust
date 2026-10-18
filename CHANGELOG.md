@@ -16,8 +16,51 @@ All notable changes to the `fopost` crate are documented here.
   An X account connected before this release answers `409 reconnect_required` for repost,
   bookmark and follow until it is reconnected, because the grant now asks for bookmark and
   follow permissions.
+- Ads tracking on `ads()` (scope `ads` only): `pixels`, `create_pixel`, `pixel`,
+  `update_pixel`, `share_pixel`, `pixel_stats` and `event_match_quality` manage the pixels on
+  an ad account, `custom_conversions`, `create_custom_conversion`, `custom_conversion`,
+  `update_custom_conversion` and `delete_custom_conversion` the custom conversions, and
+  `conversion_batches` reads stored conversion batches with hashed identifiers only.
+- `send_conversions(&UploadConversions, idempotency_key)` sends through
+  `POST /ads/conversions/events` with the required `Idempotency-Key` header; a repeat answers
+  the stored batch with `replayed: true`.
+- `ConversionEvent` gains `event_id`, `action_source` (`ActionSource`), `source_url`,
+  `external_id`, `client_ip_address`, `client_user_agent`, `click_id`, `browser_id` and
+  `content_ids`, with builders for each.
 
-## 0.3.0 - 2026-10-18
+### Changed
+
+- `upload_conversions` returns `ConversionUploadResult` (`id`, `accepted`, `event_count`,
+  `replayed`) instead of the bare accepted count. `ConversionsAccepted` is a deprecated alias
+  of the new type.
+
+## 0.4.0 - 2026-10-18
+
+### Added
+
+- `client.queue()` wraps the posting queue: `slots`, `create_slot`, `update_slot`,
+  `delete_slot`, `next` and `preview`. `CreatePost::queue()` and `UpdatePost::queue()` send
+  `schedule: "queue"` so the API picks the next free slot (`PostSchedule`). A changed or
+  deleted slot answers with the queued posts it moved (`QueueMove`).
+- `client.connect_sessions()` mints and reads hosted connect links (`create`, `get`);
+  `CreateConnectSession` carries the end user's id, the networks offered, a redirect URL and
+  `ConnectBranding`. The hosted `url` is present on creation only.
+- `client.logs()` reads the request log (`GET /logs`) with every filter the API takes; the
+  page carries `meta.next_cursor` (pass it back as `before`) and a `summary` of the window.
+- `posts().unpublish` takes a live post down from every network and reports each
+  `PlatformRemoval`; `PostStatus::Unpublished`.
+- `webhooks().deliveries`, `delivery` and `redeliver` read the delivery log and queue a
+  delivery again; `WebhookDeliveryDetail` carries the body exactly as it was sent.
+- `automations().versions`, `version` and `restore_version` read and restore saved graph
+  versions (`AutomationVersion`, `AutomationVersionDetail`, `WorkflowGraph`).
+- `analytics().inbox` reads `GET /analytics/inbox`: totals, deltas, the daily series, volume
+  by platform, type and account, response-time buckets and the weekday-hour heatmap.
+
+### Fixed
+
+- `accounts().delete_discord_message` now returns `()`: the API answers 204 with no body,
+  so decoding a `DiscordAck` always failed.
+
 
 ### Added
 

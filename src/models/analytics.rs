@@ -856,3 +856,144 @@ impl AnalyticsQuery {
         self
     }
 }
+
+// ─── Inbox analytics ───────────────────────────────────────────────
+
+/// Inbox volume over the period.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct InboxTotals {
+    #[serde(default)]
+    pub received: i64,
+    #[serde(default)]
+    pub sent: i64,
+    /// Inbound items that got a reply.
+    #[serde(default)]
+    pub answered: i64,
+    /// Inbound items still unread or read, not resolved.
+    #[serde(default)]
+    pub open: i64,
+    #[serde(default)]
+    pub conversations: i64,
+    /// Median minutes from an inbound item to its first reply; `None` without replies.
+    #[serde(default)]
+    pub median_response_minutes: Option<f64>,
+}
+
+/// Percentage change against the previous period of the same length.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct InboxDeltas {
+    #[serde(default)]
+    pub received: Option<f64>,
+    #[serde(default)]
+    pub sent: Option<f64>,
+    #[serde(default)]
+    pub answered: Option<f64>,
+}
+
+/// One day of inbox volume.
+#[derive(Debug, Clone, Deserialize)]
+pub struct InboxSeriesPoint {
+    #[serde(default)]
+    pub date: Option<String>,
+    #[serde(default)]
+    pub received: i64,
+    #[serde(default)]
+    pub sent: i64,
+    #[serde(default)]
+    pub answered: i64,
+}
+
+/// Inbox volume on one platform.
+#[derive(Debug, Clone, Deserialize)]
+pub struct InboxPlatformVolume {
+    #[serde(default)]
+    pub platform: Option<String>,
+    #[serde(default)]
+    pub received: i64,
+    #[serde(default)]
+    pub sent: i64,
+}
+
+/// How many items of one kind (`comment`, `mention`, `reply`, `dm`, `review`).
+#[derive(Debug, Clone, Deserialize)]
+pub struct InboxTypeCount {
+    #[serde(rename = "type", default)]
+    pub item_type: Option<String>,
+    #[serde(default)]
+    pub count: i64,
+}
+
+/// Inbox volume on one account.
+#[derive(Debug, Clone, Deserialize)]
+pub struct InboxAccountVolume {
+    #[serde(default)]
+    pub account_id: Option<String>,
+    #[serde(default)]
+    pub platform: Option<String>,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub avatar: Option<String>,
+    #[serde(default)]
+    pub received: i64,
+    #[serde(default)]
+    pub sent: i64,
+}
+
+/// How many replies landed in one response-time bucket (`under_1h`, `1h_6h`,
+/// `6h_24h`, `1d_3d`, `over_3d`).
+#[derive(Debug, Clone, Deserialize)]
+pub struct InboxResponseBucket {
+    #[serde(default)]
+    pub bucket: Option<String>,
+    #[serde(default)]
+    pub count: i64,
+}
+
+/// Inbound volume in one weekday-hour cell. `weekday` 0 is Sunday.
+#[derive(Debug, Clone, Deserialize)]
+pub struct InboxHeatmapCell {
+    #[serde(default)]
+    pub weekday: u8,
+    #[serde(default)]
+    pub hour: u8,
+    #[serde(default)]
+    pub count: i64,
+}
+
+/// How the inbox is doing: volume, response times, and where it comes from.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct InboxAnalytics {
+    #[serde(default)]
+    pub totals: InboxTotals,
+    #[serde(default)]
+    pub deltas: InboxDeltas,
+    #[serde(default)]
+    pub series: Vec<InboxSeriesPoint>,
+    #[serde(default)]
+    pub by_platform: Vec<InboxPlatformVolume>,
+    #[serde(default)]
+    pub by_type: Vec<InboxTypeCount>,
+    #[serde(default)]
+    pub by_account: Vec<InboxAccountVolume>,
+    #[serde(default)]
+    pub response_time: Vec<InboxResponseBucket>,
+    #[serde(default)]
+    pub heatmap: Vec<InboxHeatmapCell>,
+    /// The zone the heatmap is bucketed in.
+    #[serde(default)]
+    pub time_zone: Option<String>,
+}
+
+/// How to scope the inbox analytics.
+#[derive(Debug, Clone, Default)]
+pub struct InboxAnalyticsQuery<'a> {
+    pub workspace_id: Option<&'a str>,
+    pub account_id: Option<&'a str>,
+    /// 1 to 365, 7 by default.
+    pub days: Option<u32>,
+    /// IANA time zone the heatmap is bucketed in, `UTC` by default.
+    pub tz: Option<&'a str>,
+}

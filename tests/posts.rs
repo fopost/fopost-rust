@@ -477,3 +477,68 @@ async fn update_without_content_appends_direct_uploads_to_the_existing_block() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn a_queued_post_sends_schedule_queue() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/posts"))
+        .and(body_json(serde_json::json!({
+            "workspace_id": "ws_1",
+            "accounts": ["acc_1"],
+            "content": [{ "text": "Hello from the queue", "media": [] }],
+            "schedule": "queue"
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json({
+            let mut post = post_fixture();
+            post["status"] = serde_json::json!("scheduled");
+            post["schedule_at"] = serde_json::json!("2026-10-19T07:30:00.000Z");
+            post
+        }))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let post = client
+        .posts()
+        .create(
+            &CreatePost::text("ws_1", "Hello from the queue")
+                .accounts(["acc_1"])
+                .queue(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(post.status, PostStatus::Scheduled);
+    assert_eq!(
+        post.schedule_at.as_deref(),
+        Some("2026-10-19T07:30:00.000Z")
+    );
+}
+
+#[tokio::test]
+async fn unpublish_reports_each_network_removal() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/posts/post_1/unpublish"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "post_status": "unpublished",
+            "deliveries": [
+                { "account_id": "acc_1", "platform": "twitter", "removed": true },
+                { "account_id": "acc_2", "platform": "linkedin", "removed": false }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let result = client.posts().unpublish("post_1").await.unwrap();
+
+    assert_eq!(result.post_status, Some(PostStatus::Unpublished));
+    assert_eq!(result.deliveries.len(), 2);
+    assert!(result.deliveries[0].removed);
+    assert!(!result.deliveries[1].removed);
+    assert_eq!(result.deliveries[1].platform, "linkedin");
+}

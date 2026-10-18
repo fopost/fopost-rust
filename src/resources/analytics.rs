@@ -6,8 +6,9 @@ use crate::error::Result;
 use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
     AnalyticsOverview, AnalyticsQuery, Audience, CollectPostResult, CollectSummary, ContentDecay,
-    Demographics, InboxPage, LabelAnalytics, MetricChangePage, MetricChangesQuery, NativePost,
-    NativePostsQuery, PostTimeline, PostingFrequency, PostsTable, StreakDay, TimeSeries, TopPost,
+    Demographics, InboxAnalytics, InboxAnalyticsQuery, InboxPage, LabelAnalytics, MetricChangePage,
+    MetricChangesQuery, NativePost, NativePostsQuery, PostTimeline, PostingFrequency, PostsTable,
+    StreakDay, TimeSeries, TopPost,
 };
 
 /// Reporting across every connected account.
@@ -140,6 +141,19 @@ impl Analytics<'_> {
             .send::<_, ()>(Method::GET, "/analytics/demographics", Some(query), None)
             .await?;
         Ok(body.data)
+    }
+
+    /// How the inbox is doing: volume, response times, and where it comes
+    /// from, over `days` (7 by default).
+    pub async fn inbox(&self, params: &InboxAnalyticsQuery<'_>) -> Result<InboxAnalytics> {
+        let mut query: Query = Vec::new();
+        push_opt(&mut query, "workspace_id", params.workspace_id);
+        push_opt(&mut query, "account_id", params.account_id);
+        push_opt(&mut query, "days", params.days);
+        push_opt(&mut query, "tz", params.tz);
+        self.http
+            .send::<InboxAnalytics, ()>(Method::GET, "/analytics/inbox", Some(query), None)
+            .await
     }
 
     /// Pull fresh numbers from the platforms now, instead of waiting for the

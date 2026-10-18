@@ -3,8 +3,11 @@
 use reqwest::Method;
 
 use crate::error::Result;
-use crate::http::{Envelope, HttpClient};
-use crate::models::{CreateWebhook, Message, UpdateWebhook, Webhook, WebhookCreated};
+use crate::http::{push_opt, Envelope, HttpClient, Query};
+use crate::models::{
+    CreateWebhook, Message, UpdateWebhook, Webhook, WebhookCreated, WebhookDelivery,
+    WebhookDeliveryDetail, WebhookDeliveryStatus,
+};
 
 /// Webhook subscriptions.
 #[derive(Debug, Clone)]
@@ -53,5 +56,54 @@ impl Webhooks<'_> {
         self.http
             .send::<Message, ()>(Method::POST, &format!("/webhooks/{id}/test"), None, None)
             .await
+    }
+
+    /// Recent delivery attempts to this webhook, newest first. `limit` is 50
+    /// by default and 200 at most.
+    pub async fn deliveries(
+        &self,
+        id: &str,
+        status: Option<WebhookDeliveryStatus>,
+        limit: Option<u32>,
+    ) -> Result<Vec<WebhookDelivery>> {
+        let mut query: Query = Vec::new();
+        push_opt(&mut query, "status", status);
+        push_opt(&mut query, "limit", limit);
+        let body: Envelope<Vec<WebhookDelivery>> = self
+            .http
+            .send::<_, ()>(
+                Method::GET,
+                &format!("/webhooks/{id}/deliveries"),
+                Some(query),
+                None,
+            )
+            .await?;
+        Ok(body.data)
+    }
+
+    /// One delivery attempt, with the body exactly as it was sent.
+    pub async fn delivery(&self, id: &str, delivery_id: &str) -> Result<WebhookDeliveryDetail> {
+        self.http
+            .send::<WebhookDeliveryDetail, ()>(
+                Method::GET,
+                &format!("/webhooks/{id}/deliveries/{delivery_id}"),
+                None,
+                None,
+            )
+            .await
+    }
+
+    /// Send a delivery's payload again, as a new attempt under the same
+    /// delivery key. 409 while the webhook is paused.
+    pub async fn redeliver(&self, id: &str, delivery_id: &str) -> Result<()> {
+        self.http
+            .send::<serde_json::Value, ()>(
+                Method::POST,
+                &format!("/webhooks/{id}/deliveries/{delivery_id}/redeliver"),
+                None,
+                None,
+            )
+            .await?;
+        Ok(())
     }
 }

@@ -3265,18 +3265,56 @@ impl AdCommentsQuery {
     }
 }
 
-/// One offline conversion. Identifiers are hashed by the API before anything
-/// leaves FoPost.
+string_enum! {
+    /// Where a conversion happened. `Website` when omitted.
+    pub enum ActionSource {
+        Website => "website",
+        App => "app",
+        Email => "email",
+        PhoneCall => "phone_call",
+        Chat => "chat",
+        PhysicalStore => "physical_store",
+        SystemGenerated => "system_generated",
+        BusinessMessaging => "business_messaging",
+        OtherSource => "other",
+    }
+}
+
+/// One conversion sent through the Conversions API. `email`, `phone` and
+/// `external_id` are hashed by the API before anything leaves FoPost; the ip
+/// and user agent are forwarded for matching. None of them is stored.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConversionEvent {
     pub event_name: String,
     /// ISO 8601.
     pub occurred_at: String,
+    /// Your own id for the event, so the network deduplicates a browser and
+    /// server pair.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_source: Option<ActionSource>,
+    /// The page the event fired on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phone: Option<String>,
+    /// Your own user id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_ip_address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_user_agent: Option<String>,
+    /// The network's click id (`fbc`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub click_id: Option<String>,
+    /// The network's browser id (`fbp`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub browser_id: Option<String>,
     /// Account currency, minor units.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_minor: Option<i64>,
@@ -3284,6 +3322,8 @@ pub struct ConversionEvent {
     pub currency: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_ids: Option<Vec<String>>,
 }
 
 impl ConversionEvent {
@@ -3291,16 +3331,67 @@ impl ConversionEvent {
         Self {
             event_name: event_name.into(),
             occurred_at: occurred_at.into(),
+            event_id: None,
+            action_source: None,
+            source_url: None,
             email: None,
             phone: None,
+            external_id: None,
+            client_ip_address: None,
+            client_user_agent: None,
+            click_id: None,
+            browser_id: None,
             value_minor: None,
             currency: None,
             order_id: None,
+            content_ids: None,
         }
+    }
+
+    pub fn event_id(mut self, event_id: impl Into<String>) -> Self {
+        self.event_id = Some(event_id.into());
+        self
+    }
+
+    pub fn action_source(mut self, source: ActionSource) -> Self {
+        self.action_source = Some(source);
+        self
+    }
+
+    pub fn source_url(mut self, url: impl Into<String>) -> Self {
+        self.source_url = Some(url.into());
+        self
     }
 
     pub fn email(mut self, email: impl Into<String>) -> Self {
         self.email = Some(email.into());
+        self
+    }
+
+    pub fn phone(mut self, phone: impl Into<String>) -> Self {
+        self.phone = Some(phone.into());
+        self
+    }
+
+    pub fn external_id(mut self, external_id: impl Into<String>) -> Self {
+        self.external_id = Some(external_id.into());
+        self
+    }
+
+    /// The visitor's ip and user agent, as the request carried them.
+    pub fn client(mut self, ip: impl Into<String>, user_agent: impl Into<String>) -> Self {
+        self.client_ip_address = Some(ip.into());
+        self.client_user_agent = Some(user_agent.into());
+        self
+    }
+
+    pub fn click_id(mut self, click_id: impl Into<String>) -> Self {
+        self.click_id = Some(click_id.into());
+        self
+    }
+
+    pub fn browser_id(mut self, browser_id: impl Into<String>) -> Self {
+        self.browser_id = Some(browser_id.into());
         self
     }
 
@@ -3309,27 +3400,365 @@ impl ConversionEvent {
         self.currency = Some(currency.into());
         self
     }
+
+    pub fn order_id(mut self, order_id: impl Into<String>) -> Self {
+        self.order_id = Some(order_id.into());
+        self
+    }
+
+    pub fn content_ids(mut self, ids: Vec<String>) -> Self {
+        self.content_ids = Some(ids);
+        self
+    }
 }
 
-/// The body of `POST /ads/conversions`.
+/// The body of `POST /ads/conversions` and `POST /ads/conversions/events`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadConversions {
     pub workspace_id: String,
     pub connection_id: String,
     pub ad_account_id: String,
-    /// A pixel the ad account owns, from `audiences()`.
+    /// A pixel the ad account owns, from `pixels()`.
     pub pixel_id: String,
     /// Up to 1000 per call.
     pub events: Vec<ConversionEvent>,
 }
 
-/// How many events the network accepted.
-#[derive(Debug, Clone, Deserialize)]
+/// What became of a conversion batch.
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ConversionsAccepted {
+pub struct ConversionUploadResult {
+    /// The stored batch, readable through `conversion_batches()`.
+    #[serde(default)]
+    pub id: String,
+    /// How many events the network received.
     #[serde(default)]
     pub accepted: i64,
+    #[serde(default)]
+    pub event_count: i64,
+    /// True when the `Idempotency-Key` had been used before and nothing was sent.
+    #[serde(default)]
+    pub replayed: bool,
+}
+
+/// The old name of [`ConversionUploadResult`].
+#[deprecated(since = "0.3.1", note = "renamed to ConversionUploadResult")]
+pub type ConversionsAccepted = ConversionUploadResult;
+
+/// Filters `GET /ads/conversions/events`.
+#[derive(Debug, Clone, Default)]
+pub struct ConversionBatchesQuery {
+    pub workspace_id: Option<String>,
+    pub connection_id: Option<String>,
+    pub limit: Option<u32>,
+}
+
+impl ConversionBatchesQuery {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn workspace(mut self, workspace_id: impl Into<String>) -> Self {
+        self.workspace_id = Some(workspace_id.into());
+        self
+    }
+
+    pub fn connection(mut self, connection_id: impl Into<String>) -> Self {
+        self.connection_id = Some(connection_id.into());
+        self
+    }
+
+    pub fn limit(mut self, limit: u32) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+}
+
+/// A stored conversion batch. Identifiers are kept only as hashes.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversionBatch {
+    pub id: String,
+    #[serde(default)]
+    pub workspace_id: String,
+    #[serde(default)]
+    pub connection_id: String,
+    #[serde(default)]
+    pub ad_account_id: String,
+    #[serde(default)]
+    pub pixel_id: String,
+    #[serde(default)]
+    pub idempotency_key: Option<String>,
+    #[serde(default)]
+    pub event_count: i64,
+    #[serde(default)]
+    pub accepted: i64,
+    #[serde(default)]
+    pub events: Vec<HashedEvent>,
+    #[serde(default)]
+    pub created_at: String,
+}
+
+/// One event as the batch stored it: hashes, never the raw identifiers.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HashedEvent {
+    #[serde(default)]
+    pub event_name: String,
+    #[serde(default)]
+    pub occurred_at: String,
+    #[serde(default)]
+    pub event_id: Option<String>,
+    #[serde(default)]
+    pub action_source: Option<ActionSource>,
+    /// SHA-256 of the normalised email.
+    #[serde(default)]
+    pub email_hash: Option<String>,
+    #[serde(default)]
+    pub phone_hash: Option<String>,
+    #[serde(default)]
+    pub external_id_hash: Option<String>,
+    #[serde(default)]
+    pub value_minor: Option<i64>,
+    #[serde(default)]
+    pub currency: Option<String>,
+    #[serde(default)]
+    pub order_id: Option<String>,
+}
+
+string_enum! {
+    /// What a pixel's data may be used for.
+    pub enum PixelDataUseSetting {
+        AdvertisingAndAnalytics => "advertising_and_analytics",
+        AnalyticsOnly => "analytics_only",
+    }
+}
+
+/// A pixel with its install script.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdPixelDetail {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    /// The script to place on the site.
+    #[serde(default)]
+    pub code: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub last_fired_at: Option<String>,
+    #[serde(default)]
+    pub is_unavailable: bool,
+    #[serde(default)]
+    pub data_use_setting: Option<PixelDataUseSetting>,
+}
+
+/// The body of `POST /ads/pixels`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatePixel {
+    pub workspace_id: String,
+    pub connection_id: String,
+    pub ad_account_id: String,
+    pub name: String,
+}
+
+/// The body of `PATCH /ads/pixels/{id}`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatePixel {
+    pub workspace_id: String,
+    pub connection_id: String,
+    pub ad_account_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_use_setting: Option<PixelDataUseSetting>,
+}
+
+/// The body of `POST /ads/pixels/{id}/share`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharePixel {
+    pub workspace_id: String,
+    pub connection_id: String,
+    pub ad_account_id: String,
+    /// Another ad account under the same business portfolio.
+    pub target_ad_account_id: String,
+}
+
+/// Event counts over the last 28 days.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdPixelStats {
+    #[serde(default)]
+    pub since: String,
+    #[serde(default)]
+    pub until: String,
+    #[serde(default)]
+    pub events: Vec<PixelEventCount>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PixelEventCount {
+    #[serde(default)]
+    pub event_name: String,
+    #[serde(default)]
+    pub count: i64,
+}
+
+/// How well one event's identifiers match people on the network.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventMatchQuality {
+    #[serde(default)]
+    pub event_name: String,
+    /// The network's match score out of 10.
+    #[serde(default)]
+    pub score: Option<f64>,
+    #[serde(default)]
+    pub match_keys: Vec<MatchKeyCoverage>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MatchKeyCoverage {
+    #[serde(default)]
+    pub identifier: String,
+    #[serde(default)]
+    pub coverage_percent: f64,
+}
+
+string_enum! {
+    /// The standard event a custom conversion counts as.
+    pub enum CustomConversionEventType {
+        AddPaymentInfo => "ADD_PAYMENT_INFO",
+        AddToCart => "ADD_TO_CART",
+        AddToWishlist => "ADD_TO_WISHLIST",
+        CompleteRegistration => "COMPLETE_REGISTRATION",
+        ContentView => "CONTENT_VIEW",
+        InitiatedCheckout => "INITIATED_CHECKOUT",
+        Lead => "LEAD",
+        Purchase => "PURCHASE",
+        Search => "SEARCH",
+        Contact => "CONTACT",
+        CustomizeProduct => "CUSTOMIZE_PRODUCT",
+        Donate => "DONATE",
+        FindLocation => "FIND_LOCATION",
+        Schedule => "SCHEDULE",
+        StartTrial => "START_TRIAL",
+        SubmitApplication => "SUBMIT_APPLICATION",
+        Subscribe => "SUBSCRIBE",
+        OtherEvent => "OTHER",
+    }
+}
+
+/// The pixel event and URL a custom conversion counts. Pick one of
+/// `url_contains` and `url_equals`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomConversionRule {
+    /// `PageView` when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url_contains: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url_equals: Option<String>,
+}
+
+impl CustomConversionRule {
+    pub fn url_contains(fragment: impl Into<String>) -> Self {
+        Self {
+            url_contains: Some(fragment.into()),
+            ..Self::default()
+        }
+    }
+
+    pub fn url_equals(url: impl Into<String>) -> Self {
+        Self {
+            url_equals: Some(url.into()),
+            ..Self::default()
+        }
+    }
+
+    pub fn event_name(mut self, event_name: impl Into<String>) -> Self {
+        self.event_name = Some(event_name.into());
+        self
+    }
+}
+
+/// A custom conversion on an ad account.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomConversion {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub pixel_id: Option<String>,
+    #[serde(default)]
+    pub event_type: Option<CustomConversionEventType>,
+    #[serde(default)]
+    pub rule: Option<CustomConversionRule>,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Account currency, minor units.
+    #[serde(default)]
+    pub default_value_minor: Option<i64>,
+    #[serde(default)]
+    pub is_archived: bool,
+    #[serde(default)]
+    pub is_unavailable: bool,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub last_fired_at: Option<String>,
+}
+
+/// The body of `POST /ads/custom-conversions`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateCustomConversion {
+    pub workspace_id: String,
+    pub connection_id: String,
+    pub ad_account_id: String,
+    pub pixel_id: String,
+    pub name: String,
+    pub event_type: CustomConversionEventType,
+    pub rule: CustomConversionRule,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Account currency, minor units.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_value_minor: Option<i64>,
+}
+
+/// The body of `PATCH /ads/custom-conversions/{id}`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCustomConversion {
+    pub workspace_id: String,
+    pub connection_id: String,
+    pub ad_account_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_value_minor: Option<i64>,
+}
+
+/// The body of `DELETE /ads/custom-conversions/{id}`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteCustomConversion {
+    pub workspace_id: String,
+    pub connection_id: String,
+    pub ad_account_id: String,
 }
 
 /// The reply's id on the network.
