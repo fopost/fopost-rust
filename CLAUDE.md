@@ -8,7 +8,7 @@ Crate `fopost` on crates.io — the official Rust client for the FoPost REST API
 (`fopost.com`). Version `0.4.0`. It wraps the API's HTTP surface in resource accessors on
 `Client`: `posts()`, `accounts()`, `workspaces()`, `labels()`, `webhooks()`,
 `automations()`, `analytics()`, `media()`, `inbox()`, `contacts()`, `broadcasts()`,
-`sequences()`, `ads()`, `validate()`, `blog()`, `queue()`, `connect_sessions()`, `logs()`.
+`sequences()`, `ads()`, `validate()`, `queue()`, `connect_sessions()`, `logs()`.
 
 Edition 2021, `rust-version = "1.88"` (the MSRV CI builds against). Async on `reqwest`
 0.12 + `tokio`; models are `serde`; errors are `thiserror`. Docs at docs.rs/fopost.
@@ -125,17 +125,6 @@ takes the `Idempotency-Key` as a required argument, passed through
 `HttpClient::send_with_headers`; it is not named `send_conversion_events` because that name
 already belongs to the LinkedIn conversion-rule send.
 
-`blog()` covers the `Blog` tag: settings (`posts`), keywords (`posts`, `suggest_seeds`
-and `plan_keywords` are `ai`) and articles (`request_article`/`regenerate_article` are
-`ai`, `submit_article` is `posts`, `publish_article` is `publish`). Responses are
-snake_case and come bare, except the lists, which are `{data: [...]}`. Request bodies are
-camelCase. The workspace is `workspace_id` on the query string for reads and the `{id}`
-routes, and `workspaceId` in the body for the collection writes (`InWorkspace` flattens it
-beside the payload). `update_settings` decodes the settings plus `website_secret` as
-`BlogSettingsUpdated`, which flattens `BlogSettings`. `BlogArticleFull` flattens
-`BlogArticle` and derefs to it. The `article.published` webhook payload
-(`BlogArticlePublished`) stays camelCase, so `BlogArticleImage` also accepts `mediaId`.
-
 `queue()` (scope `posts`) is the posting queue: slot CRUD plus `next` and `preview`. A post
 joins it with `CreatePost::queue()` / `UpdatePost::queue()`, which send `schedule: "queue"`
 instead of `schedule_at`. `connect_sessions()` (scope `accounts`) mints hosted connect links;
@@ -148,7 +137,7 @@ lists in `{data}` — follow the handler, not the neighbour, when adding a sibli
 `delete_discord_message` answers 204 and returns `()`.
 
 `verify_webhook(raw_body, &WebhookSignature, secret)` in `src/webhook.rs` (re-exported at
-the root) verifies any outbound delivery, including a blog Website target's. It uses
+the root) verifies any outbound delivery. It uses
 `hmac` + `sha2` with `verify_slice` (constant time), prefers `X-FoPost-Signature-256` over
 `<timestamp>.<body>` within `WEBHOOK_TOLERANCE` (300 s), and falls back to the body-only
 `X-FoPost-Signature` only when no timestamp header is present. `verify_webhook_at` takes

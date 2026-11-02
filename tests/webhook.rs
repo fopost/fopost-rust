@@ -1,7 +1,7 @@
 //! The delivery verifier: the timestamped signature wins, the body-only
 //! signature is a fallback, and a stale or tampered delivery is refused.
 
-use fopost::models::{BlogArticlePublished, WebhookEvent};
+use fopost::models::WebhookEvent;
 use fopost::{
     sign_webhook, sign_webhook_at, verify_webhook_at, WebhookError, WebhookSignature,
     WEBHOOK_TOLERANCE,
@@ -13,21 +13,8 @@ const NOW: u64 = 1_760_000_000;
 
 fn body() -> Vec<u8> {
     serde_json::json!({
-        "event": "article.published",
-        "data": {
-            "id": "art_1",
-            "title": "The best trail running shoes",
-            "slug": "best-trail-running-shoes",
-            "bodyMarkdown": "# Shoes",
-            "bodyHtml": "<h1>Shoes</h1>",
-            "featuredImage": null,
-            "images": [],
-            "tags": ["running"],
-            "keyword": "trail running shoes",
-            "wordCount": 1200,
-            "publishedAt": "2026-10-09T10:00:00.000Z",
-            "publishedUrl": "https://yourbrand.com/blog/best-trail-running-shoes"
-        },
+        "event": "post.published",
+        "data": { "id": "post_1", "status": "published" },
         "timestamp": "2026-10-09T10:00:00.000Z"
     })
     .to_string()
@@ -47,14 +34,9 @@ fn a_timestamped_signature_passes_and_the_payload_decodes() {
     let body = body();
     let envelope = verify_webhook_at(&body, &timestamped(&body, NOW - 10), SECRET, NOW).unwrap();
 
-    assert_eq!(envelope.event, WebhookEvent::ArticlePublished);
+    assert_eq!(envelope.event, WebhookEvent::PostPublished);
     assert_eq!(envelope.timestamp, "2026-10-09T10:00:00.000Z");
-    let article: BlogArticlePublished = envelope.data_as().unwrap();
-    assert_eq!(article.slug, "best-trail-running-shoes");
-    assert_eq!(
-        article.published_url.as_deref(),
-        Some("https://yourbrand.com/blog/best-trail-running-shoes")
-    );
+    assert_eq!(envelope.data["id"], "post_1");
 }
 
 #[test]

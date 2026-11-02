@@ -29,8 +29,7 @@
 //! creation: `posts` (which covers publishing, deliveries, and media),
 //! `workspaces`, `accounts`, `labels`, `webhooks`, `analytics`, `automations`,
 //! `inbox` (which also covers the knowledge base), `ads` (whose four
-//! spending calls also need `publish`), and `ai` for the blog calls that
-//! spend credits.
+//! spending calls also need `publish`), and `ai`.
 //! A key may also be bound to one workspace, in which case naming any other
 //! workspace answers `403`.
 //!
