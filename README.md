@@ -102,7 +102,6 @@ workspace answers `403`.
 | `google_business()` | `get_location`, `update_location`, `get_attributes`, `update_attributes`, `get_menus`, `replace_menus`, `get_services`, `replace_services`, `list_media`, `add_media`, `delete_media`, `list_place_actions`, `create_place_action`, `update_place_action`, `delete_place_action`, `get_verification_options`, `start_verification`, `complete_verification`, `get_performance`, `get_search_keywords`, `assign` |
 | `validate()` | `post`, `length`, `media`, `subreddit` |
 | `whatsapp()` | `profile`, `update_profile`, `request_display_name`, `set_username`, `templates`, `template_library`, `template`, `create_template`, `import_template`, `update_template`, `delete_template`, `groups`, `create_group`, `group`, `update_group`, `delete_group`, `group_invite_link`, `reset_group_invite_link`, `remove_group_participants`, `blocked`, `block_users`, `unblock_users`, `commerce_settings`, `update_commerce_settings`, `link_catalog`, `flows`, `flow`, `create_flow`, `update_flow`, `delete_flow`, `upload_flow_json`, `publish_flow`, `deprecate_flow`, `flow_responses`, `encryption_key_status`, `set_encryption_key`, `account_events`, `sandbox_sessions`, `create_sandbox_session` |
-| `blog()` | `get_settings`, `update_settings`, `rotate_website_secret`, `test_website`, `list_keywords`, `suggest_seeds`, `plan_keywords`, `add_keyword`, `update_keyword`, `delete_keyword`, `list_articles`, `request_article`, `get_article`, `update_article`, `regenerate_article`, `submit_article`, `publish_article`, `reject_article`, `delete_article` |
 | `blogs()` | `list_blogs`, `list_articles`, `get_article`, `create_article`, `update_article`, `delete_article`, `list_products`, `update_product` |
 | `activity()` | `list` |
 | `queue()` | `slots`, `create_slot`, `update_slot`, `delete_slot`, `next`, `preview` |
@@ -373,89 +372,18 @@ API change behind it, so the same loop is three pieces with this client:
 
 Reading needs the `inbox` scope; answering needs `publish` as well.
 
-## Blog
+## Verifying webhooks
 
-`client.blog()` plans keywords, drafts articles and publishes them to a website. An
-article goes to a website; a post goes to a social network. Reads, settings, keyword
-edits and `submit_article` need the `posts` scope; `suggest_seeds`, `plan_keywords`,
-`request_article` and `regenerate_article` spend credits and need `ai` (a spent balance is
-a 402 with an `upgrade_url`); `publish_article` needs `publish` and answers 409 `no_target`
-until the settings name a target.
-
-Planning starts from the blog's goal. Suggest search terms, research them, then pick the
-keywords worth writing; a picked keyword takes the next free date on the calendar.
+Every FoPost webhook is signed the same way. Hand the verifier the request bytes exactly
+as received:
 
 ```rust,no_run
-use fopost::models::{
-    BlogGoal, BlogKeywordStatus, ListBlogKeywords, PlanBlogKeywords, SuggestBlogSeeds,
-    UpdateBlogKeyword, UpdateBlogSettings,
-};
-
-# async fn run(client: fopost::Client, workspace_id: &str) -> fopost::Result<()> {
-let blog = client.blog();
-blog.update_settings(
-    workspace_id,
-    &UpdateBlogSettings::new()
-        .goal(Some(BlogGoal::Leads))
-        .focus_topics(Some("trail running gear")),
-)
-.await?;
-
-let seeds = blog
-    .suggest_seeds(workspace_id, &SuggestBlogSeeds::new().prompt("Beginners, not racers"))
-    .await?;
-blog.plan_keywords(workspace_id, &PlanBlogKeywords::new().seeds(seeds))
-    .await?;
-
-let suggested = blog
-    .list_keywords(workspace_id, &ListBlogKeywords::new().status(BlogKeywordStatus::Suggested))
-    .await?;
-for keyword in suggested.iter().take(3) {
-    let pick = UpdateBlogKeyword::new().status(BlogKeywordStatus::Planned);
-    blog.update_keyword(workspace_id, &keyword.id, &pick).await?;
-}
-# Ok(())
-# }
-```
-
-Every article is approved before it publishes: submit a draft for review, then publish it
-or give it a `publish_at`.
-
-```rust,no_run
-use fopost::models::{BlogArticleStatus, RequestBlogArticle};
-
-# async fn run(client: fopost::Client, workspace_id: &str) -> fopost::Result<()> {
-let queued = client
-    .blog()
-    .request_article(
-        workspace_id,
-        &RequestBlogArticle::keyword("trail running shoes").instructions("Compare three models"),
-    )
-    .await?;
-
-let article = client.blog().get_article(workspace_id, &queued.id).await?;
-if article.status == BlogArticleStatus::Draft {
-    client.blog().submit_article(workspace_id, &article.id).await?;
-    client.blog().publish_article(workspace_id, &article.id).await?;
-}
-# Ok(())
-# }
-```
-
-A Website target POSTs every published article to `website_url`, signed with the secret
-`update_settings` returns the first time the URL is set (rotate it with
-`rotate_website_secret`). Every FoPost webhook is signed the same way, so one verifier
-covers both. Hand it the request bytes exactly as received:
-
-```rust,no_run
-use fopost::models::BlogArticlePublished;
 use fopost::{verify_webhook, WebhookSignature};
 
 # fn handle(raw_body: &[u8], headers: &reqwest::header::HeaderMap, secret: &str) -> Result<(), Box<dyn std::error::Error>> {
 let envelope = verify_webhook(raw_body, &WebhookSignature::from_headers(headers), secret)?;
-if envelope.event.as_str() == "article.published" {
-    let article: BlogArticlePublished = envelope.data_as()?;
-    println!("{} is live at {:?}", article.title, article.published_url);
+if envelope.event.as_str() == "post.published" {
+    println!("{} published", envelope.data["id"]);
 }
 # Ok(())
 # }

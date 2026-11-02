@@ -34,6 +34,13 @@ All notable changes to the `fopost` crate are documented here.
   `replayed`) instead of the bare accepted count. `ConversionsAccepted` is a deprecated alias
   of the new type.
 
+### Removed
+
+- `blog()` and the retired `/v1/blog/*` endpoints it wrapped (settings, website secret and
+  test, destinations, keywords, articles), with every `Blog*` model and parameter type and the
+  `WebhookEvent::ArticlePublished` and `WebhookEvent::ArticleTest` variants. Articles are
+  ordinary posts now; `blogs()` (remote articles on a connected site) is unchanged.
+
 ## 0.4.0 - 2026-10-18
 
 ### Added

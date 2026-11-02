@@ -87,9 +87,7 @@ pub struct WebhookEnvelope {
 }
 
 impl WebhookEnvelope {
-    /// Decode `data` into a typed payload, such as
-    /// [`BlogArticlePublished`](crate::models::BlogArticlePublished) for
-    /// `article.published`.
+    /// Decode `data` into a typed payload.
     pub fn data_as<T: DeserializeOwned>(&self) -> Result<T, serde_json::Error> {
         serde_json::from_value(self.data.clone())
     }
@@ -120,14 +118,12 @@ pub enum WebhookError {
 ///
 /// ```no_run
 /// use fopost::{verify_webhook, WebhookSignature};
-/// use fopost::models::BlogArticlePublished;
 ///
 /// # fn handle(raw_body: &[u8], headers: &reqwest::header::HeaderMap) -> Result<(), Box<dyn std::error::Error>> {
 /// let secret = std::env::var("FOPOST_WEBHOOK_SECRET")?;
 /// let envelope = verify_webhook(raw_body, &WebhookSignature::from_headers(headers), &secret)?;
-/// if envelope.event.as_str() == "article.published" {
-///     let article: BlogArticlePublished = envelope.data_as()?;
-///     println!("{} is live at {:?}", article.title, article.published_url);
+/// if envelope.event.as_str() == "post.published" {
+///     println!("{} published", envelope.data["id"]);
 /// }
 /// # Ok(()) }
 /// ```
