@@ -13,8 +13,8 @@ use crate::models::{
     ApprovalDecision, InboxAccount, InboxApproval, InboxConversation, InboxConversationStarted,
     InboxHandover, InboxItem, InboxPage, InboxPlatform, InboxRefreshResult, InboxReply,
     InboxReplyResult, InboxThread, ListInbox, ListInboxConversations, ListInboxThreads,
-    MarkThreadRead, StartInboxConversation, UpdateInboxItem, VoteInboxItem, XPost, XSearchPage,
-    XSearchParams,
+    MarkThreadRead, ResolveInbox, StartInboxConversation, UpdateInboxItem, VoteInboxItem, XPost,
+    XSearchPage, XSearchParams,
 };
 
 /// Account ids as the list endpoints take them, comma-separated; `None` when empty.
@@ -144,6 +144,21 @@ impl Inbox<'_> {
             .send(Method::POST, "/inbox/read", None, Some(thread))
             .await?;
         Ok(body.data.updated)
+    }
+
+    /// Resolve every unanswered item of one type. Returns how many items changed. Nothing
+    /// reaches a platform.
+    pub async fn resolve(&self, body: &ResolveInbox) -> Result<u64> {
+        #[derive(serde::Deserialize)]
+        struct Resolved {
+            #[serde(default)]
+            resolved: u64,
+        }
+        let body: Envelope<Resolved> = self
+            .http
+            .send(Method::POST, "/inbox/resolve", None, Some(body))
+            .await?;
+        Ok(body.data.resolved)
     }
 
     /// Poll every inbox-capable account in the workspace now.

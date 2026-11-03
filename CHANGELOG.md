@@ -6,6 +6,9 @@ All notable changes to the `fopost` crate are documented here.
 
 ### Added
 
+- `inbox().resolve(&ResolveInbox)` resolves every unanswered item of one type
+  (`POST /inbox/resolve`), optionally only on some accounts or only items dated before
+  `before`, and returns how many changed. Nothing reaches a platform.
 - The inbox lists (`list`, `threads`, `conversations`) filter by `status` (`InboxStatus`:
   `Unanswered`, `Replied`, `Resolved`) and `since`, and narrow to one or more accounts:
   `account(id)` adds one, `accounts(ids)` adds several, sent comma-separated as `account_id`.

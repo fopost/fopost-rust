@@ -16,11 +16,11 @@ use fopost::models::{
     GoogleScope, ImportContacts, InboxItemState, InboxItemType, InboxReply, InboxSort, InboxStatus,
     InsightsBreakdown, InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts, ListBroadcasts,
     ListContacts, ListInbox, ListRecipients, MarkThreadRead, Platform, RecipientStatus,
-    SequenceStep, SetAdStatuses, SetGoogleAdSchedule, SetRedditDefaultSubreddit, SignalLevel,
-    SkipReason, StartInboxConversation, TelegramBotCommand, TriggerType, UpdateContact,
-    UpdateDiscordIdentity, UpdateInboxItem, UpdateSlackIdentity, ValidateLength, ValidateMedia,
-    ValidateMediaItem, ValidatePost, VoteInboxItem, WebhookDeliveryStatus, WebhookEvent,
-    XSearchParams,
+    ResolveInbox, SequenceStep, SetAdStatuses, SetGoogleAdSchedule, SetRedditDefaultSubreddit,
+    SignalLevel, SkipReason, StartInboxConversation, TelegramBotCommand, TriggerType,
+    UpdateContact, UpdateDiscordIdentity, UpdateInboxItem, UpdateSlackIdentity, ValidateLength,
+    ValidateMedia, ValidateMediaItem, ValidatePost, VoteInboxItem, WebhookDeliveryStatus,
+    WebhookEvent, XSearchParams,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -712,6 +712,37 @@ async fn marking_a_thread_read_posts_snake_case_and_reads_the_count() {
         .await
         .unwrap();
     assert_eq!(updated, 4);
+}
+
+#[tokio::test]
+async fn resolving_the_inbox_posts_the_filters_and_reads_the_count() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/inbox/resolve"))
+        .and(body_json(serde_json::json!({
+            "workspace_id": "ws_1",
+            "type": "comment",
+            "account_id": ["acc_1", "acc_2"],
+            "before": "2026-10-01T00:00:00Z"
+        })))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": {"resolved": 7}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let resolved = client
+        .inbox()
+        .resolve(
+            &ResolveInbox::new("ws_1", InboxItemType::Comment)
+                .accounts(["acc_1", "acc_2"])
+                .before("2026-10-01T00:00:00Z"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resolved, 7);
 }
 
 #[tokio::test]

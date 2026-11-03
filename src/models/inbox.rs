@@ -707,6 +707,54 @@ impl ListInboxConversations {
     }
 }
 
+/// The body of `POST /inbox/resolve`: every unanswered item of one type, optionally only on
+/// some accounts or only items dated before a moment.
+#[derive(Debug, Clone, Serialize)]
+pub struct ResolveInbox {
+    pub workspace_id: String,
+    #[serde(rename = "type")]
+    pub item_type: InboxItemType,
+    #[serde(rename = "account_id", skip_serializing_if = "Vec::is_empty")]
+    pub account_ids: Vec<String>,
+    /// ISO 8601: only items the platform dates before this.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+}
+
+impl ResolveInbox {
+    pub fn new(workspace_id: impl Into<String>, item_type: InboxItemType) -> Self {
+        Self {
+            workspace_id: workspace_id.into(),
+            item_type,
+            account_ids: Vec::new(),
+            before: None,
+        }
+    }
+
+    /// Only this connected account. Call again to add another.
+    pub fn account(mut self, account_id: impl Into<String>) -> Self {
+        self.account_ids.push(account_id.into());
+        self
+    }
+
+    /// Only these connected accounts.
+    pub fn accounts<I, S>(mut self, account_ids: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.account_ids
+            .extend(account_ids.into_iter().map(Into::into));
+        self
+    }
+
+    /// ISO 8601: only items the platform dates before this.
+    pub fn before(mut self, before: impl Into<String>) -> Self {
+        self.before = Some(before.into());
+        self
+    }
+}
+
 /// The body of `POST /inbox/read`: one comment thread or one DM thread.
 #[derive(Debug, Clone, Serialize)]
 pub struct MarkThreadRead {
