@@ -6,6 +6,9 @@ All notable changes to the `fopost` crate are documented here.
 
 ### Added
 
+- The inbox lists (`list`, `threads`, `conversations`) filter by `status` (`InboxStatus`:
+  `Unanswered`, `Replied`, `Resolved`) and `since`, and narrow to one or more accounts:
+  `account(id)` adds one, `accounts(ids)` adds several, sent comma-separated as `account_id`.
 - `inbox().repost`, `unrepost`, `bookmark` and `unbookmark` act on an X item where
   `can_repost` or `can_bookmark` is true, and `InboxItem` gains `reposted`, `bookmarked`,
   `can_repost` and `can_bookmark`. `accounts().follow_x_user(id, user_id)` and
@@ -36,6 +39,10 @@ All notable changes to the `fopost` crate are documented here.
 
 ### Removed
 
+- `platform`, `state` and `q` on `ListInbox`, `ListInboxThreads` and
+  `ListInboxConversations` (with their `platform`, `state` and `search` builders), and
+  `InboxSort::Unanswered`. The API no longer accepts them on the inbox lists; use `status` and
+  `account`. `account_id: Option<String>` is now `account_ids: Vec<String>`.
 - `blog()` and the retired `/v1/blog/*` endpoints it wrapped (settings, website secret and
   test, destinations, keywords, articles), with every `Blog*` model and parameter type and the
   `WebhookEvent::ArticlePublished` and `WebhookEvent::ArticleTest` variants. Articles are

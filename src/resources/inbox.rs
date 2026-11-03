@@ -17,6 +17,11 @@ use crate::models::{
     XSearchParams,
 };
 
+/// Account ids as the list endpoints take them, comma-separated; `None` when empty.
+fn joined(ids: &[String]) -> Option<String> {
+    (!ids.is_empty()).then(|| ids.join(","))
+}
+
 /// The inbox.
 #[derive(Debug, Clone)]
 pub struct Inbox<'a> {
@@ -29,9 +34,9 @@ impl Inbox<'_> {
         let mut query: Query = Vec::new();
         push_opt(&mut query, "workspace_id", params.workspace_id.as_ref());
         push_opt(&mut query, "type", params.item_type.as_ref());
-        push_opt(&mut query, "state", params.state.as_ref());
-        push_opt(&mut query, "platform", params.platform.as_ref());
-        push_opt(&mut query, "account_id", params.account_id.as_ref());
+        push_opt(&mut query, "account_id", joined(&params.account_ids));
+        push_opt(&mut query, "status", params.status.as_ref());
+        push_opt(&mut query, "since", params.since.as_ref());
         push_opt(&mut query, "post_id", params.post_id.as_ref());
         push_opt(
             &mut query,
@@ -44,7 +49,6 @@ impl Inbox<'_> {
             params.conversation_id.as_ref(),
         );
         push_opt(&mut query, "direction", params.direction.as_ref());
-        push_opt(&mut query, "q", params.q.as_ref());
         push_opt(&mut query, "sort", params.sort.as_ref());
         push_opt(&mut query, "page", params.page);
         push_opt(&mut query, "per_page", params.per_page);
@@ -58,10 +62,9 @@ impl Inbox<'_> {
         let mut query: Query = Vec::new();
         push_opt(&mut query, "workspace_id", params.workspace_id.as_ref());
         push_opt(&mut query, "kind", params.kind.as_ref());
-        push_opt(&mut query, "platform", params.platform.as_ref());
-        push_opt(&mut query, "account_id", params.account_id.as_ref());
-        push_opt(&mut query, "state", params.state.as_ref());
-        push_opt(&mut query, "q", params.q.as_ref());
+        push_opt(&mut query, "account_id", joined(&params.account_ids));
+        push_opt(&mut query, "status", params.status.as_ref());
+        push_opt(&mut query, "since", params.since.as_ref());
         push_opt(&mut query, "sort", params.sort.as_ref());
         push_opt(&mut query, "page", params.page);
         push_opt(&mut query, "per_page", params.per_page);
@@ -77,10 +80,9 @@ impl Inbox<'_> {
     ) -> Result<InboxPage<InboxConversation>> {
         let mut query: Query = Vec::new();
         push_opt(&mut query, "workspace_id", params.workspace_id.as_ref());
-        push_opt(&mut query, "platform", params.platform.as_ref());
-        push_opt(&mut query, "account_id", params.account_id.as_ref());
-        push_opt(&mut query, "state", params.state.as_ref());
-        push_opt(&mut query, "q", params.q.as_ref());
+        push_opt(&mut query, "account_id", joined(&params.account_ids));
+        push_opt(&mut query, "status", params.status.as_ref());
+        push_opt(&mut query, "since", params.since.as_ref());
         push_opt(&mut query, "sort", params.sort.as_ref());
         push_opt(&mut query, "page", params.page);
         push_opt(&mut query, "per_page", params.per_page);

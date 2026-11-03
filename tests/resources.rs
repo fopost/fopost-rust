@@ -13,7 +13,7 @@ use fopost::models::{
     CreateContact, CreateContactField, CreateGoogleKeyword, CreatePinterestBoard, CreateSequence,
     CreateWebhook, CreateWhatsappTemplate, DiscordEventInput, DiscordRoleInput, Enroll,
     GoogleAdScheduleInput, GoogleDayOfWeek, GoogleMatchType, GoogleQuery, GoogleRecommendations,
-    GoogleScope, ImportContacts, InboxItemState, InboxItemType, InboxReply, InboxSort,
+    GoogleScope, ImportContacts, InboxItemState, InboxItemType, InboxReply, InboxSort, InboxStatus,
     InsightsBreakdown, InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts, ListBroadcasts,
     ListContacts, ListInbox, ListRecipients, MarkThreadRead, Platform, RecipientStatus,
     SequenceStep, SetAdStatuses, SetGoogleAdSchedule, SetRedditDefaultSubreddit, SignalLevel,
@@ -583,9 +583,11 @@ async fn inbox_list_sends_snake_case_filters_and_reads_the_page_meta() {
         .and(path("/v1/inbox"))
         .and(query_param("workspace_id", "ws_1"))
         .and(query_param("type", "comment"))
-        .and(query_param("state", "unread"))
+        .and(query_param("account_id", "acc_1,acc_2"))
+        .and(query_param("status", "unanswered"))
+        .and(query_param("since", "2026-10-01T00:00:00Z"))
         .and(query_param("post_external_id", "ext_9"))
-        .and(query_param("sort", "unanswered"))
+        .and(query_param("sort", "oldest"))
         .and(query_param("per_page", "10"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "data": [{
@@ -617,9 +619,12 @@ async fn inbox_list_sends_snake_case_filters_and_reads_the_page_meta() {
             &ListInbox::new()
                 .workspace("ws_1")
                 .item_type(InboxItemType::Comment)
-                .state(InboxItemState::Unread)
+                .account("acc_1")
+                .account("acc_2")
+                .status(InboxStatus::Unanswered)
+                .since("2026-10-01T00:00:00Z")
                 .post_external_id("ext_9")
-                .sort(InboxSort::Unanswered)
+                .sort(InboxSort::Oldest)
                 .per_page(10),
         )
         .await
