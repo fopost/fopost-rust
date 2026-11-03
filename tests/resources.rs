@@ -13,14 +13,14 @@ use fopost::models::{
     CreateContact, CreateContactField, CreateGoogleKeyword, CreatePinterestBoard, CreateSequence,
     CreateWebhook, CreateWhatsappTemplate, DiscordEventInput, DiscordRoleInput, Enroll,
     GoogleAdScheduleInput, GoogleDayOfWeek, GoogleMatchType, GoogleQuery, GoogleRecommendations,
-    GoogleScope, ImportContacts, InboxItemState, InboxItemType, InboxReply, InboxSort,
+    GoogleScope, ImportContacts, InboxItemState, InboxItemType, InboxReply, InboxSort, InboxStatus,
     InsightsBreakdown, InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts, ListBroadcasts,
     ListContacts, ListInbox, ListRecipients, MarkThreadRead, Platform, RecipientStatus,
-    SequenceStep, SetAdStatuses, SetGoogleAdSchedule, SetRedditDefaultSubreddit, SignalLevel,
-    SkipReason, StartInboxConversation, TelegramBotCommand, TriggerType, UpdateContact,
-    UpdateDiscordIdentity, UpdateInboxItem, UpdateSlackIdentity, ValidateLength, ValidateMedia,
-    ValidateMediaItem, ValidatePost, VoteInboxItem, WebhookDeliveryStatus, WebhookEvent,
-    XSearchParams,
+    ResolveInbox, SequenceStep, SetAdStatuses, SetGoogleAdSchedule, SetRedditDefaultSubreddit,
+    SignalLevel, SkipReason, StartInboxConversation, TelegramBotCommand, TriggerType,
+    UpdateContact, UpdateDiscordIdentity, UpdateInboxItem, UpdateSlackIdentity, ValidateLength,
+    ValidateMedia, ValidateMediaItem, ValidatePost, VoteInboxItem, WebhookDeliveryStatus,
+    WebhookEvent, XSearchParams,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -583,9 +583,11 @@ async fn inbox_list_sends_snake_case_filters_and_reads_the_page_meta() {
         .and(path("/v1/inbox"))
         .and(query_param("workspace_id", "ws_1"))
         .and(query_param("type", "comment"))
-        .and(query_param("state", "unread"))
+        .and(query_param("account_id", "acc_1,acc_2"))
+        .and(query_param("status", "unanswered"))
+        .and(query_param("since", "2026-10-01T00:00:00Z"))
         .and(query_param("post_external_id", "ext_9"))
-        .and(query_param("sort", "unanswered"))
+        .and(query_param("sort", "oldest"))
         .and(query_param("per_page", "10"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "data": [{
@@ -617,9 +619,12 @@ async fn inbox_list_sends_snake_case_filters_and_reads_the_page_meta() {
             &ListInbox::new()
                 .workspace("ws_1")
                 .item_type(InboxItemType::Comment)
-                .state(InboxItemState::Unread)
+                .account("acc_1")
+                .account("acc_2")
+                .status(InboxStatus::Unanswered)
+                .since("2026-10-01T00:00:00Z")
                 .post_external_id("ext_9")
-                .sort(InboxSort::Unanswered)
+                .sort(InboxSort::Oldest)
                 .per_page(10),
         )
         .await
@@ -707,6 +712,37 @@ async fn marking_a_thread_read_posts_snake_case_and_reads_the_count() {
         .await
         .unwrap();
     assert_eq!(updated, 4);
+}
+
+#[tokio::test]
+async fn resolving_the_inbox_posts_the_filters_and_reads_the_count() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/inbox/resolve"))
+        .and(body_json(serde_json::json!({
+            "workspace_id": "ws_1",
+            "type": "comment",
+            "account_id": ["acc_1", "acc_2"],
+            "before": "2026-10-01T00:00:00Z"
+        })))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": {"resolved": 7}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let resolved = client
+        .inbox()
+        .resolve(
+            &ResolveInbox::new("ws_1", InboxItemType::Comment)
+                .accounts(["acc_1", "acc_2"])
+                .before("2026-10-01T00:00:00Z"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resolved, 7);
 }
 
 #[tokio::test]

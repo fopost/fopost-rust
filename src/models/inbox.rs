@@ -35,11 +35,20 @@ string_enum! {
 }
 
 string_enum! {
+    /// Which items an inbox listing keeps. A reply also resolves an item, so the three never
+    /// overlap.
+    pub enum InboxStatus {
+        Unanswered => "unanswered",
+        Replied => "replied",
+        Resolved => "resolved",
+    }
+}
+
+string_enum! {
     /// Order of an inbox listing.
     pub enum InboxSort {
         Newest => "newest",
         Oldest => "oldest",
-        Unanswered => "unanswered",
     }
 }
 
@@ -459,9 +468,11 @@ impl<'a, T> IntoIterator for &'a InboxPage<T> {
 pub struct ListInbox {
     pub workspace_id: Option<String>,
     pub item_type: Option<InboxItemType>,
-    pub state: Option<InboxItemState>,
-    pub platform: Option<String>,
-    pub account_id: Option<String>,
+    /// One or more connected accounts, sent comma-separated.
+    pub account_ids: Vec<String>,
+    pub status: Option<InboxStatus>,
+    /// ISO 8601: only items the platform dates at or after this.
+    pub since: Option<String>,
     /// Comments under one FoPost post.
     pub post_id: Option<String>,
     /// Comments under one platform post, including posts not published through FoPost.
@@ -469,7 +480,6 @@ pub struct ListInbox {
     /// One DM thread.
     pub conversation_id: Option<String>,
     pub direction: Option<InboxDirection>,
-    pub q: Option<String>,
     pub sort: Option<InboxSort>,
     pub page: Option<u32>,
     pub per_page: Option<u32>,
@@ -490,18 +500,31 @@ impl ListInbox {
         self
     }
 
-    pub fn state(mut self, state: InboxItemState) -> Self {
-        self.state = Some(state);
-        self
-    }
-
-    pub fn platform(mut self, platform: impl Into<String>) -> Self {
-        self.platform = Some(platform.into());
-        self
-    }
-
+    /// Narrow to one more connected account. Call again to add another.
     pub fn account(mut self, account_id: impl Into<String>) -> Self {
-        self.account_id = Some(account_id.into());
+        self.account_ids.push(account_id.into());
+        self
+    }
+
+    /// Narrow to several connected accounts.
+    pub fn accounts<I, S>(mut self, account_ids: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.account_ids
+            .extend(account_ids.into_iter().map(Into::into));
+        self
+    }
+
+    pub fn status(mut self, status: InboxStatus) -> Self {
+        self.status = Some(status);
+        self
+    }
+
+    /// ISO 8601: only items the platform dates at or after this.
+    pub fn since(mut self, since: impl Into<String>) -> Self {
+        self.since = Some(since.into());
         self
     }
 
@@ -522,11 +545,6 @@ impl ListInbox {
 
     pub fn direction(mut self, direction: InboxDirection) -> Self {
         self.direction = Some(direction);
-        self
-    }
-
-    pub fn search(mut self, q: impl Into<String>) -> Self {
-        self.q = Some(q.into());
         self
     }
 
@@ -552,10 +570,11 @@ pub struct ListInboxThreads {
     pub workspace_id: Option<String>,
     /// Comment threads by default; `Mentions` for posts we were tagged in.
     pub kind: Option<InboxThreadKind>,
-    pub platform: Option<String>,
-    pub account_id: Option<String>,
-    pub state: Option<InboxItemState>,
-    pub q: Option<String>,
+    /// One or more connected accounts, sent comma-separated.
+    pub account_ids: Vec<String>,
+    pub status: Option<InboxStatus>,
+    /// ISO 8601: only items the platform dates at or after this.
+    pub since: Option<String>,
     pub sort: Option<InboxSort>,
     pub page: Option<u32>,
     pub per_page: Option<u32>,
@@ -576,23 +595,31 @@ impl ListInboxThreads {
         self
     }
 
-    pub fn platform(mut self, platform: impl Into<String>) -> Self {
-        self.platform = Some(platform.into());
-        self
-    }
-
+    /// Narrow to one more connected account. Call again to add another.
     pub fn account(mut self, account_id: impl Into<String>) -> Self {
-        self.account_id = Some(account_id.into());
+        self.account_ids.push(account_id.into());
         self
     }
 
-    pub fn state(mut self, state: InboxItemState) -> Self {
-        self.state = Some(state);
+    /// Narrow to several connected accounts.
+    pub fn accounts<I, S>(mut self, account_ids: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.account_ids
+            .extend(account_ids.into_iter().map(Into::into));
         self
     }
 
-    pub fn search(mut self, q: impl Into<String>) -> Self {
-        self.q = Some(q.into());
+    pub fn status(mut self, status: InboxStatus) -> Self {
+        self.status = Some(status);
+        self
+    }
+
+    /// ISO 8601: only items the platform dates at or after this.
+    pub fn since(mut self, since: impl Into<String>) -> Self {
+        self.since = Some(since.into());
         self
     }
 
@@ -616,10 +643,11 @@ impl ListInboxThreads {
 #[derive(Debug, Clone, Default)]
 pub struct ListInboxConversations {
     pub workspace_id: Option<String>,
-    pub platform: Option<String>,
-    pub account_id: Option<String>,
-    pub state: Option<InboxItemState>,
-    pub q: Option<String>,
+    /// One or more connected accounts, sent comma-separated.
+    pub account_ids: Vec<String>,
+    pub status: Option<InboxStatus>,
+    /// ISO 8601: only items the platform dates at or after this.
+    pub since: Option<String>,
     pub sort: Option<InboxSort>,
     pub page: Option<u32>,
     pub per_page: Option<u32>,
@@ -635,23 +663,31 @@ impl ListInboxConversations {
         self
     }
 
-    pub fn platform(mut self, platform: impl Into<String>) -> Self {
-        self.platform = Some(platform.into());
-        self
-    }
-
+    /// Narrow to one more connected account. Call again to add another.
     pub fn account(mut self, account_id: impl Into<String>) -> Self {
-        self.account_id = Some(account_id.into());
+        self.account_ids.push(account_id.into());
         self
     }
 
-    pub fn state(mut self, state: InboxItemState) -> Self {
-        self.state = Some(state);
+    /// Narrow to several connected accounts.
+    pub fn accounts<I, S>(mut self, account_ids: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.account_ids
+            .extend(account_ids.into_iter().map(Into::into));
         self
     }
 
-    pub fn search(mut self, q: impl Into<String>) -> Self {
-        self.q = Some(q.into());
+    pub fn status(mut self, status: InboxStatus) -> Self {
+        self.status = Some(status);
+        self
+    }
+
+    /// ISO 8601: only items the platform dates at or after this.
+    pub fn since(mut self, since: impl Into<String>) -> Self {
+        self.since = Some(since.into());
         self
     }
 
@@ -667,6 +703,54 @@ impl ListInboxConversations {
 
     pub fn per_page(mut self, per_page: u32) -> Self {
         self.per_page = Some(per_page);
+        self
+    }
+}
+
+/// The body of `POST /inbox/resolve`: every unanswered item of one type, optionally only on
+/// some accounts or only items dated before a moment.
+#[derive(Debug, Clone, Serialize)]
+pub struct ResolveInbox {
+    pub workspace_id: String,
+    #[serde(rename = "type")]
+    pub item_type: InboxItemType,
+    #[serde(rename = "account_id", skip_serializing_if = "Vec::is_empty")]
+    pub account_ids: Vec<String>,
+    /// ISO 8601: only items the platform dates before this.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+}
+
+impl ResolveInbox {
+    pub fn new(workspace_id: impl Into<String>, item_type: InboxItemType) -> Self {
+        Self {
+            workspace_id: workspace_id.into(),
+            item_type,
+            account_ids: Vec::new(),
+            before: None,
+        }
+    }
+
+    /// Only this connected account. Call again to add another.
+    pub fn account(mut self, account_id: impl Into<String>) -> Self {
+        self.account_ids.push(account_id.into());
+        self
+    }
+
+    /// Only these connected accounts.
+    pub fn accounts<I, S>(mut self, account_ids: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.account_ids
+            .extend(account_ids.into_iter().map(Into::into));
+        self
+    }
+
+    /// ISO 8601: only items the platform dates before this.
+    pub fn before(mut self, before: impl Into<String>) -> Self {
+        self.before = Some(before.into());
         self
     }
 }

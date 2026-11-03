@@ -13,9 +13,14 @@ use crate::models::{
     ApprovalDecision, InboxAccount, InboxApproval, InboxConversation, InboxConversationStarted,
     InboxHandover, InboxItem, InboxPage, InboxPlatform, InboxRefreshResult, InboxReply,
     InboxReplyResult, InboxThread, ListInbox, ListInboxConversations, ListInboxThreads,
-    MarkThreadRead, StartInboxConversation, UpdateInboxItem, VoteInboxItem, XPost, XSearchPage,
-    XSearchParams,
+    MarkThreadRead, ResolveInbox, StartInboxConversation, UpdateInboxItem, VoteInboxItem, XPost,
+    XSearchPage, XSearchParams,
 };
+
+/// Account ids as the list endpoints take them, comma-separated; `None` when empty.
+fn joined(ids: &[String]) -> Option<String> {
+    (!ids.is_empty()).then(|| ids.join(","))
+}
 
 /// The inbox.
 #[derive(Debug, Clone)]
@@ -29,9 +34,9 @@ impl Inbox<'_> {
         let mut query: Query = Vec::new();
         push_opt(&mut query, "workspace_id", params.workspace_id.as_ref());
         push_opt(&mut query, "type", params.item_type.as_ref());
-        push_opt(&mut query, "state", params.state.as_ref());
-        push_opt(&mut query, "platform", params.platform.as_ref());
-        push_opt(&mut query, "account_id", params.account_id.as_ref());
+        push_opt(&mut query, "account_id", joined(&params.account_ids));
+        push_opt(&mut query, "status", params.status.as_ref());
+        push_opt(&mut query, "since", params.since.as_ref());
         push_opt(&mut query, "post_id", params.post_id.as_ref());
         push_opt(
             &mut query,
@@ -44,7 +49,6 @@ impl Inbox<'_> {
             params.conversation_id.as_ref(),
         );
         push_opt(&mut query, "direction", params.direction.as_ref());
-        push_opt(&mut query, "q", params.q.as_ref());
         push_opt(&mut query, "sort", params.sort.as_ref());
         push_opt(&mut query, "page", params.page);
         push_opt(&mut query, "per_page", params.per_page);
@@ -58,10 +62,9 @@ impl Inbox<'_> {
         let mut query: Query = Vec::new();
         push_opt(&mut query, "workspace_id", params.workspace_id.as_ref());
         push_opt(&mut query, "kind", params.kind.as_ref());
-        push_opt(&mut query, "platform", params.platform.as_ref());
-        push_opt(&mut query, "account_id", params.account_id.as_ref());
-        push_opt(&mut query, "state", params.state.as_ref());
-        push_opt(&mut query, "q", params.q.as_ref());
+        push_opt(&mut query, "account_id", joined(&params.account_ids));
+        push_opt(&mut query, "status", params.status.as_ref());
+        push_opt(&mut query, "since", params.since.as_ref());
         push_opt(&mut query, "sort", params.sort.as_ref());
         push_opt(&mut query, "page", params.page);
         push_opt(&mut query, "per_page", params.per_page);
@@ -77,10 +80,9 @@ impl Inbox<'_> {
     ) -> Result<InboxPage<InboxConversation>> {
         let mut query: Query = Vec::new();
         push_opt(&mut query, "workspace_id", params.workspace_id.as_ref());
-        push_opt(&mut query, "platform", params.platform.as_ref());
-        push_opt(&mut query, "account_id", params.account_id.as_ref());
-        push_opt(&mut query, "state", params.state.as_ref());
-        push_opt(&mut query, "q", params.q.as_ref());
+        push_opt(&mut query, "account_id", joined(&params.account_ids));
+        push_opt(&mut query, "status", params.status.as_ref());
+        push_opt(&mut query, "since", params.since.as_ref());
         push_opt(&mut query, "sort", params.sort.as_ref());
         push_opt(&mut query, "page", params.page);
         push_opt(&mut query, "per_page", params.per_page);
@@ -142,6 +144,21 @@ impl Inbox<'_> {
             .send(Method::POST, "/inbox/read", None, Some(thread))
             .await?;
         Ok(body.data.updated)
+    }
+
+    /// Resolve every unanswered item of one type. Returns how many items changed. Nothing
+    /// reaches a platform.
+    pub async fn resolve(&self, body: &ResolveInbox) -> Result<u64> {
+        #[derive(serde::Deserialize)]
+        struct Resolved {
+            #[serde(default)]
+            resolved: u64,
+        }
+        let body: Envelope<Resolved> = self
+            .http
+            .send(Method::POST, "/inbox/resolve", None, Some(body))
+            .await?;
+        Ok(body.data.resolved)
     }
 
     /// Poll every inbox-capable account in the workspace now.
