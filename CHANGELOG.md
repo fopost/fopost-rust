@@ -36,6 +36,9 @@ All notable changes to the `fopost` crate are documented here.
 
 ### Changed
 
+- `posts().validate_import` and `posts().commit_import` take an `accounts: &[&str]` argument
+  (account ids or platform names), sent comma-separated and applied to every CSV row whose
+  own `accounts` cell is empty. Pass `&[]` to send none.
 - `upload_conversions` returns `ConversionUploadResult` (`id`, `accepted`, `event_count`,
   `replayed`) instead of the bare accepted count. `ConversionsAccepted` is a deprecated alias
   of the new type.
