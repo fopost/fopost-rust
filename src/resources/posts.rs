@@ -225,27 +225,31 @@ impl Posts<'_> {
 #[cfg_attr(docsrs, doc(cfg(feature = "multipart")))]
 impl Posts<'_> {
     /// Dry-run a bulk-import CSV: what each row would create, and why a row
-    /// would not. Nothing is written.
+    /// would not. Nothing is written. `accounts` (ids or platform names) applies
+    /// to rows whose own accounts cell is empty; pass `&[]` for none.
     pub async fn validate_import(
         &self,
         workspace_id: &str,
         csv: crate::models::MediaUpload,
+        accounts: &[&str],
     ) -> Result<crate::models::BulkImportValidation> {
         let value = self
-            .send_csv("/posts/bulk-import/validate", workspace_id, csv)
+            .send_csv("/posts/bulk-import/validate", workspace_id, csv, accounts)
             .await?;
         crate::http::decode(value)
     }
 
     /// Commit a bulk-import CSV, creating a post per row. Keep the returned
-    /// `batch_id` — it is what [`Posts::rollback_import`] takes.
+    /// `batch_id` — it is what [`Posts::rollback_import`] takes. `accounts` works
+    /// as in [`Posts::validate_import`].
     pub async fn commit_import(
         &self,
         workspace_id: &str,
         csv: crate::models::MediaUpload,
+        accounts: &[&str],
     ) -> Result<crate::models::BulkImportCommit> {
         let value = self
-            .send_csv("/posts/bulk-import/commit", workspace_id, csv)
+            .send_csv("/posts/bulk-import/commit", workspace_id, csv, accounts)
             .await?;
         crate::http::decode(value)
     }
@@ -386,14 +390,18 @@ impl Posts<'_> {
         path: &str,
         workspace_id: &str,
         csv: crate::models::MediaUpload,
+        accounts: &[&str],
     ) -> Result<serde_json::Value> {
         let part = reqwest::multipart::Part::bytes(csv.bytes)
             .file_name(csv.filename)
             .mime_str(&csv.mime_type)
             .map_err(crate::error::Error::Transport)?;
-        let form = reqwest::multipart::Form::new()
-            .text("workspace_id", workspace_id.to_string())
-            .part("file", part);
+        let mut form =
+            reqwest::multipart::Form::new().text("workspace_id", workspace_id.to_string());
+        if !accounts.is_empty() {
+            form = form.text("accounts", accounts.join(","));
+        }
+        let form = form.part("file", part);
 
         self.http
             .send_request(self.http.raw_request(Method::POST, path)?.multipart(form))

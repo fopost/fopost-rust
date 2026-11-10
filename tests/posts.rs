@@ -542,3 +542,46 @@ async fn unpublish_reports_each_network_removal() {
     assert!(!result.deliveries[1].removed);
     assert_eq!(result.deliveries[1].platform, "linkedin");
 }
+
+#[cfg(feature = "multipart")]
+#[tokio::test]
+async fn bulk_import_sends_default_accounts_only_when_given() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/posts/bulk-import/validate"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "total_rows": 1, "valid_rows": 1, "invalid_rows": 0, "rows": []
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/posts/bulk-import/commit"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "batch_id": "batch_1", "created": 1, "posts": []
+        })))
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let csv =
+        || fopost::models::MediaUpload::new("posts.csv", "text/csv", b"content\nHi\n".to_vec());
+    client
+        .posts()
+        .validate_import("ws_1", csv(), &[])
+        .await
+        .unwrap();
+    client
+        .posts()
+        .commit_import("ws_1", csv(), &["twitter", "linkedin"])
+        .await
+        .unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    let validate = String::from_utf8_lossy(&requests[0].body);
+    assert!(!validate.contains("name=\"accounts\""), "{validate}");
+    let commit = String::from_utf8_lossy(&requests[1].body);
+    assert!(
+        commit.contains("name=\"accounts\"\r\n\r\ntwitter,linkedin"),
+        "{commit}"
+    );
+}
