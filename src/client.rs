@@ -6,7 +6,7 @@ use crate::error::{Error, Result};
 use crate::http::{HttpClient, DEFAULT_BASE_URL, USER_AGENT};
 use crate::resources::{
     AccountGroups, Accounts, Activity, Ads, Analytics, Automations, Blogs, Broadcasts,
-    ConnectSessions, Contacts, Designs, GoogleAds, GoogleBusiness, Inbox, Knowledge, Labels,
+    ConnectSessions, Contacts, Designs, Fonts, GoogleAds, GoogleBusiness, Inbox, Knowledge, Labels,
     Logs, Media, Posts, Queue, Sequences, Validate, Webhooks, Whatsapp, Workspaces,
 };
 
@@ -120,6 +120,10 @@ impl Client {
         Designs { http: &self.http }
     }
 
+    /// The font library and a workspace's uploaded fonts.
+    pub fn fonts(&self) -> Fonts<'_> {
+        Fonts { http: &self.http }
+    }
 
 
     /// The workspace knowledge base, which grounds drafted replies.
