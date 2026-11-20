@@ -6,6 +6,20 @@ All notable changes to the `fopost` crate are documented here.
 
 ### Added
 
+- `designs()` (scope `posts`): `list`, `create`, `get`, `update`, `delete`, `versions`,
+  `restore_version`, `duplicate`, `export`, `bulk`, `posts`, `text_to_slides` and `from_post`.
+  The editor document travels as `DesignDocument`, a thin wrapper over `serde_json::Value`.
+  `update` and `restore_version` answer `DesignSaved`, the design plus the version saved, if any.
+  `text_to_slides` answers a `SlideOutline` and saves nothing.
+- `fonts()` (scope `posts`): `list` answers the shipped library and the workspace's uploads,
+  `upload` sends one font file from bytes or a path (`MediaFile`, feature `multipart`) with
+  optional `FontUpload` family, weight and style, and `delete` removes an upload.
+- `video_edits()` (scope `posts`): `ops`, `list`, `create` and `get`. An edit is a list of
+  `VideoEditOperation { op, params }` and runs in the background; poll `get` until `status`
+  is `succeeded` or `failed`.
+- `media().generate_alt_text(id)` generates alt text and tags for an image and saves them on
+  the file (`POST /media/{id}/alt-text`).
+
 - `inbox().resolve(&ResolveInbox)` resolves every unanswered item of one type
   (`POST /inbox/resolve`), optionally only on some accounts or only items dated before
   `before`, and returns how many changed. Nothing reaches a platform.
