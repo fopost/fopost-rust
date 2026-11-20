@@ -136,6 +136,13 @@ read and restore the saved graph versions. Single-object answers on all of these
 lists in `{data}` — follow the handler, not the neighbour, when adding a sibling.
 `delete_discord_message` answers 204 and returns `()`.
 
+`designs()`, `fonts()` and `video_edits()` (scope `posts`) cover the `Designs` and `Video`
+tags plus `/fonts`. Bodies and answers are snake_case. Designs come in `{data}`; `update` and
+`restore_version` answer `{data, version}`, read whole as `DesignSaved`. A design document is
+`DesignDocument`, a transparent wrapper over `serde_json::Value`. The font list and upload,
+a single video edit and `media().generate_alt_text` come bare; `fonts().delete` answers 204.
+There is no poll helper for video edits, by design: the crate has none for any job.
+
 `verify_webhook(raw_body, &WebhookSignature, secret)` in `src/webhook.rs` (re-exported at
 the root) verifies any outbound delivery. It uses
 `hmac` + `sha2` with `verify_slice` (constant time), prefers `X-FoPost-Signature-256` over

@@ -289,3 +289,15 @@ pub struct UploadLimits {
     #[serde(default)]
     pub allowed_types: Vec<String>,
 }
+
+/// What `media().generate_alt_text` answers. The text is also saved on the file.
+#[derive(Debug, Clone, Deserialize)]
+pub struct MediaAltText {
+    #[serde(default)]
+    pub alt_text: String,
+    /// `ai` for generated text.
+    #[serde(default)]
+    pub alt_text_source: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}

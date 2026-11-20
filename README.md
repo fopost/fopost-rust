@@ -90,7 +90,10 @@ workspace answers `403`.
 | `webhooks()` | `list`, `create`, `update`, `delete`, `test`, `deliveries`, `delivery`, `redeliver` |
 | `automations()` | `list`, `get`, `create`, `update`, `delete`, `toggle`, `runs`, `get_run`, `stats`, `trigger`, `versions`, `version`, `restore_version` |
 | `analytics()` | `overview`, `time_series`, `top_posts`, `labels`, `posts_table`, `posting_streak`, `demographics`, `collect`, `decay`, `frequency`, `timeline`, `changes`, `collect_post`, `native_posts`, `inbox` |
-| `media()` | `list`, `limits`, `upload`, `presign`, `complete`, `upload_direct`, `upload_direct_with`, `delete` |
+| `media()` | `list`, `limits`, `upload`, `presign`, `complete`, `upload_direct`, `upload_direct_with`, `generate_alt_text`, `delete` |
+| `designs()` | `list`, `create`, `get`, `update`, `delete`, `versions`, `restore_version`, `duplicate`, `export`, `bulk`, `posts`, `text_to_slides`, `from_post` |
+| `fonts()` | `list`, `upload`, `delete` |
+| `video_edits()` | `ops`, `list`, `create`, `get` |
 | `contacts()` | `list`, `get`, `create`, `update`, `delete`, `conversations`, `import`, `list_fields`, `create_field`, `update_field`, `delete_field`, `conversation_analytics` |
 | `broadcasts()` | `list`, `get`, `create`, `update`, `delete`, `send`, `cancel`, `recipients` |
 | `sequences()` | `list`, `get`, `create`, `update`, `delete`, `enroll`, `unenroll`, `enrollments` |
@@ -116,7 +119,7 @@ and deleting our own reply also need `publish`, as do `accounts().follow_x_user`
 `search_x_posts` read X live with the named account's token and need only `inbox`; every X repost, bookmark, follow, lookup and
 search is an X API call metered to the workspace, and an X account connected before these shipped answers `409 reconnect_required`
 until it is reconnected. A boost or ad starts paused unless you pass
-`.paused(false)`. `validate()` needs the `posts` scope and stores nothing. On `google_business()` the reads need `accounts` and every write needs `publish` as well; every call fails with a 503 `configuration_error` until Google grants the deployment Business Profile API access, and responses relay Google's own shape as `serde_json::Value`.
+`.paused(false)`. `validate()` needs the `posts` scope and stores nothing. `designs()`, `fonts()`, `video_edits()` and `media().generate_alt_text` need the `posts` scope; `text_to_slides`, `generate_alt_text` and the AI video operations use AI credits, and a video edit runs in the background, so read it back with `video_edits().get` until `status` is `succeeded` or `failed`. On `google_business()` the reads need `accounts` and every write needs `publish` as well; every call fails with a 503 `configuration_error` until Google grants the deployment Business Profile API access, and responses relay Google's own shape as `serde_json::Value`.
 
 That is every endpoint the API documents. Anything not yet wrapped is reachable through
 `client.request(method, path, query, body)`, which gets the same auth, retries, and error handling.

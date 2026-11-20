@@ -533,6 +533,27 @@ async fn deleting_media_reads_the_bare_success_flag() {
     assert!(client.media().delete("med_1").await.unwrap());
 }
 
+#[tokio::test]
+async fn media_alt_text_is_generated() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/media/med_1/alt-text"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "alt_text": "A red bicycle against a white wall",
+            "alt_text_source": "ai",
+            "tags": ["bicycle", "red"]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server).await;
+    let alt = client.media().generate_alt_text("med_1").await.unwrap();
+    assert_eq!(alt.alt_text, "A red bicycle against a white wall");
+    assert_eq!(alt.alt_text_source.as_deref(), Some("ai"));
+    assert_eq!(alt.tags, vec!["bicycle", "red"]);
+}
+
 #[cfg(feature = "multipart")]
 #[tokio::test]
 async fn uploading_media_posts_a_multipart_body() {

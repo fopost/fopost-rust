@@ -6,8 +6,8 @@ use crate::error::{Error, Result};
 use crate::http::{HttpClient, DEFAULT_BASE_URL, USER_AGENT};
 use crate::resources::{
     AccountGroups, Accounts, Activity, Ads, Analytics, Automations, Blogs, Broadcasts,
-    ConnectSessions, Contacts, GoogleAds, GoogleBusiness, Inbox, Knowledge, Labels, Logs, Media,
-    Posts, Queue, Sequences, Validate, Webhooks, Whatsapp, Workspaces,
+    ConnectSessions, Contacts, Designs, Fonts, GoogleAds, GoogleBusiness, Inbox, Knowledge, Labels,
+    Logs, Media, Posts, Queue, Sequences, Validate, VideoEdits, Webhooks, Whatsapp, Workspaces,
 };
 
 /// The environment variable the key is read from by [`Client::from_env`].
@@ -113,6 +113,21 @@ impl Client {
     /// The media library.
     pub fn media(&self) -> Media<'_> {
         Media { http: &self.http }
+    }
+
+    /// Designs: editable stories, posts, carousels and thumbnails.
+    pub fn designs(&self) -> Designs<'_> {
+        Designs { http: &self.http }
+    }
+
+    /// The font library and a workspace's uploaded fonts.
+    pub fn fonts(&self) -> Fonts<'_> {
+        Fonts { http: &self.http }
+    }
+
+    /// Video edit jobs: trim, subtitles, clips and the other operations.
+    pub fn video_edits(&self) -> VideoEdits<'_> {
+        VideoEdits { http: &self.http }
     }
 
     /// The workspace knowledge base, which grounds drafted replies.
