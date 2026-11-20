@@ -5,7 +5,8 @@ use reqwest::Method;
 use crate::error::{ApiError, Error, Result};
 use crate::http::{push_opt, Envelope, HttpClient, Query};
 use crate::models::{
-    FileSource, MediaLibraryItem, PresignUpload, PresignedUpload, UploadLimits, UploadedMedia,
+    FileSource, MediaAltText, MediaLibraryItem, PresignUpload, PresignedUpload, UploadLimits,
+    UploadedMedia,
 };
 
 /// What a multipart request carries per file when `limits` cannot be read.
@@ -118,6 +119,14 @@ impl Media<'_> {
         }
 
         self.complete(&presigned.upload_id).await
+    }
+
+    /// Generate alt text and tags for an image and save them on the file.
+    /// Needs the `posts` scope and uses AI credits; a `402` means the balance ran out.
+    pub async fn generate_alt_text(&self, id: &str) -> Result<MediaAltText> {
+        self.http
+            .send::<_, ()>(Method::POST, &format!("/media/{id}/alt-text"), None, None)
+            .await
     }
 
     /// Delete a file. Posts already published keep what the platform stored.
