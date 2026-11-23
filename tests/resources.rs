@@ -6,21 +6,20 @@ mod common;
 
 use common::{account_fixture, client};
 use fopost::models::{
-    AdBudget, AdGoal, AdInsightsQuery, AdKind, AdObjectLevel, AdObjectQuery, AdObjectRef, AdStatus,
-    AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceFilter, AudienceSpec, AuthorizeGoogleAds,
-    BoostPost, BroadcastStatus, ContactChannel, ContactFieldType, ConversationAnalyticsQuery,
+    AdBudget, AdGoal, AdInsightsQuery, AdKind, AdObjectLevel, AdObjectRef, AdStatus, AdTargeting,
+    AdTargetingItem, AnalyticsQuery, AudienceFilter, AudienceSpec, AuthorizeGoogleAds, BoostPost,
+    BroadcastStatus, ContactChannel, ContactFieldType, ConversationAnalyticsQuery,
     ConversationSort, CreateAccountGroup, CreateAudience, CreateAutomation, CreateBroadcast,
-    CreateContact, CreateContactField, CreateGoogleKeyword, CreatePinterestBoard, CreateSequence,
-    CreateWebhook, CreateWhatsappTemplate, DiscordEventInput, DiscordRoleInput, Enroll,
-    GoogleAdScheduleInput, GoogleDayOfWeek, GoogleMatchType, GoogleQuery, GoogleRecommendations,
-    GoogleScope, ImportContacts, InboxItemState, InboxItemType, InboxReply, InboxSort, InboxStatus,
-    InsightsBreakdown, InsightsQuery, LeadsFeedQuery, LeadsQuery, ListAccounts, ListBroadcasts,
-    ListContacts, ListInbox, ListRecipients, MarkThreadRead, Platform, RecipientStatus,
-    ResolveInbox, SequenceStep, SetAdStatuses, SetGoogleAdSchedule, SetRedditDefaultSubreddit,
-    SignalLevel, SkipReason, StartInboxConversation, TelegramBotCommand, TriggerType,
-    UpdateContact, UpdateDiscordIdentity, UpdateInboxItem, UpdateSlackIdentity, ValidateLength,
-    ValidateMedia, ValidateMediaItem, ValidatePost, VoteInboxItem, WebhookDeliveryStatus,
-    WebhookEvent, XSearchParams,
+    CreateContact, CreateContactField, CreatePinterestBoard, CreateSequence, CreateWebhook,
+    CreateWhatsappTemplate, DiscordEventInput, DiscordRoleInput, Enroll, GoogleAdScheduleInput,
+    GoogleDayOfWeek, GoogleQuery, GoogleScope, ImportContacts, InboxItemState, InboxItemType,
+    InboxReply, InboxSort, InboxStatus, InsightsBreakdown, InsightsQuery, LeadsFeedQuery,
+    LeadsQuery, ListAccounts, ListBroadcasts, ListContacts, ListInbox, ListRecipients,
+    MarkThreadRead, Platform, RecipientStatus, ResolveInbox, SequenceStep, SetAdStatuses,
+    SetGoogleAdSchedule, SetRedditDefaultSubreddit, SignalLevel, SkipReason,
+    StartInboxConversation, TelegramBotCommand, TriggerType, UpdateContact, UpdateDiscordIdentity,
+    UpdateInboxItem, UpdateSlackIdentity, ValidateLength, ValidateMedia, ValidateMediaItem,
+    ValidatePost, VoteInboxItem, WebhookDeliveryStatus, WebhookEvent, XSearchParams,
 };
 use wiremock::matchers::{body_bytes, body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1226,54 +1225,6 @@ async fn leads_send_the_cursor_and_read_the_next_one() {
 }
 
 #[tokio::test]
-async fn the_account_tree_nests_ad_sets_and_ads_under_campaigns() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/v1/ads/accounts/act_123/tree"))
-        .and(query_param("workspace_id", "ws_1"))
-        .and(query_param("connection_id", "conn_1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "data": {
-                "adAccountId": "act_123",
-                "currency": "USD",
-                "campaigns": [{
-                    "id": "c_1",
-                    "name": "Launch",
-                    "status": "PAUSED",
-                    "budgetMinor": null,
-                    "adSets": [{
-                        "id": "s_1",
-                        "name": "US",
-                        "campaignId": "c_1",
-                        "status": "ACTIVE",
-                        "budgetMinor": 5000,
-                        "budgetType": "daily",
-                        "ads": [{"id": "a_1", "name": "Hero", "creativeId": "cr_1", "status": "ACTIVE"}]
-                    }]
-                }]
-            }
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let client = client(&server).await;
-    let tree = client
-        .ads()
-        .tree("act_123", &AdObjectQuery::new("conn_1").workspace("ws_1"))
-        .await
-        .unwrap();
-    let campaign = &tree.campaigns[0];
-    assert_eq!(campaign.campaign.id, "c_1");
-    assert_eq!(campaign.campaign.budget_minor, None);
-    assert_eq!(campaign.ad_sets[0].ad_set.budget_minor, Some(5000));
-    assert_eq!(
-        campaign.ad_sets[0].ads[0].creative_id.as_deref(),
-        Some("cr_1")
-    );
-}
-
-#[tokio::test]
 async fn bulk_status_posts_each_object_and_reads_each_outcome() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -2393,78 +2344,6 @@ async fn a_discord_webhook_connection_is_a_conflict() {
 // ─── Google Ads ────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn google_keywords_name_the_connection_and_the_customer() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/v1/ads/google/keywords"))
-        .and(query_param("connection_id", "conn_1"))
-        .and(query_param("customer_id", "1234567890"))
-        .and(query_param("ad_group_id", "1234567890~adGroup~77"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "data": [{
-                "id": "1234567890~keyword~77~99",
-                "adGroupId": "1234567890~adGroup~77",
-                "text": "running shoes",
-                "matchType": "EXACT",
-                "status": "ENABLED",
-                "cpcBidMinor": 180,
-                "negative": false
-            }]
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let client = client(&server).await;
-    let scope = GoogleScope::new("conn_1", "1234567890");
-    let keywords = client
-        .google_ads()
-        .keywords(&scope, Some("1234567890~adGroup~77"))
-        .await
-        .expect("keywords");
-
-    assert_eq!(keywords[0].text, "running shoes");
-    assert_eq!(keywords[0].cpc_bid_minor, Some(180));
-}
-
-#[tokio::test]
-async fn google_create_keyword_sends_the_scope_in_the_body() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/ads/google/keywords"))
-        .and(body_json(serde_json::json!({
-            "workspaceId": "ws_1",
-            "connectionId": "conn_1",
-            "customerId": "1234567890",
-            "adGroupId": "1234567890~adGroup~77",
-            "text": "running shoes",
-            "matchType": "EXACT"
-        })))
-        .respond_with(
-            ResponseTemplate::new(201)
-                .set_body_json(serde_json::json!({"data": {"id": "1234567890~keyword~77~99"}})),
-        )
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let client = client(&server).await;
-    let id = client
-        .google_ads()
-        .create_keyword(&CreateGoogleKeyword {
-            scope: GoogleScope::new("conn_1", "1234567890").in_workspace("ws_1"),
-            ad_group_id: "1234567890~adGroup~77".into(),
-            text: "running shoes".into(),
-            match_type: GoogleMatchType::Exact,
-            cpc_bid_minor: None,
-        })
-        .await
-        .expect("create_keyword");
-
-    assert_eq!(id, "1234567890~keyword~77~99");
-}
-
-#[tokio::test]
 async fn google_ad_schedule_is_replaced_with_put() {
     let server = MockServer::start().await;
     Mock::given(method("PUT"))
@@ -2873,69 +2752,6 @@ async fn accounts_platform_metrics_surfaces_a_pending_grant() {
 
     assert_eq!(err.status(), Some(503));
     assert_eq!(err.code(), Some("platform_metrics_unavailable"));
-}
-
-#[tokio::test]
-async fn google_recommendations_join_the_types_filter() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/v1/ads/google/recommendations"))
-        .and(query_param("types", "KEYWORD,TARGET_CPA_OPT_IN"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "data": [{
-                "id": "customers/1234567890/recommendations/ABC~1",
-                "type": "KEYWORD",
-                "campaignId": "1234567890~campaign~55",
-                "dismissed": false,
-                "impact": { "baseClicks": 10.0, "potentialClicks": 25.0 }
-            }]
-        })))
-        .mount(&server)
-        .await;
-
-    let client = client(&server).await;
-    let scope = GoogleScope::new("conn_1", "1234567890");
-    let rows = client
-        .google_ads()
-        .recommendations(&scope, &["KEYWORD", "TARGET_CPA_OPT_IN"])
-        .await
-        .expect("recommendations");
-
-    assert_eq!(rows[0].kind, "KEYWORD");
-    assert_eq!(
-        rows[0].impact.as_ref().and_then(|i| i.potential_clicks),
-        Some(25.0)
-    );
-}
-
-#[tokio::test]
-async fn google_apply_recommendations_sends_the_ids() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/ads/google/recommendations/apply"))
-        .and(body_json(serde_json::json!({
-            "workspaceId": "ws_1",
-            "connectionId": "conn_1",
-            "customerId": "1234567890",
-            "ids": ["customers/1234567890/recommendations/ABC~1"]
-        })))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": {"applied": 1}})),
-        )
-        .mount(&server)
-        .await;
-
-    let client = client(&server).await;
-    let applied = client
-        .google_ads()
-        .apply_recommendations(&GoogleRecommendations {
-            scope: GoogleScope::new("conn_1", "1234567890").in_workspace("ws_1"),
-            ids: vec!["customers/1234567890/recommendations/ABC~1".into()],
-        })
-        .await
-        .expect("apply");
-
-    assert_eq!(applied, 1);
 }
 
 #[tokio::test]

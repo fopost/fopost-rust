@@ -1,13 +1,12 @@
 //! TikTok Ads runs on the shared ads resource. These pin the paths, the query
-//! casing and the two fields a Spark ad and a Smart+ campaign add to bodies
-//! that already existed.
+//! casing and the field a Spark ad adds to a body that already existed.
 
 mod common;
 
 use common::client;
 use fopost::models::{
     AdBudget, AdCommentWrite, AdCommentsQuery, AdGoal, AdObjectQuery, AdTargeting, ConversionEvent,
-    CreateAd, CreateCampaign, SparkPostsQuery, UploadConversions,
+    CreateAd, SparkPostsQuery, UploadConversions,
 };
 use wiremock::matchers::{body_json, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -65,7 +64,7 @@ async fn business_centers_and_identities_use_the_tiktok_named_paths() {
 }
 
 #[tokio::test]
-async fn a_spark_ad_and_a_smart_plus_campaign_carry_their_own_field() {
+async fn a_spark_ad_carries_its_own_field() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/ads"))
@@ -94,25 +93,6 @@ async fn a_spark_ad_and_a_smart_plus_campaign_carry_their_own_field() {
         .expect(1)
         .mount(&server)
         .await;
-    Mock::given(method("POST"))
-        .and(path("/v1/ads/campaigns"))
-        .and(body_json(serde_json::json!({
-            "workspaceId": "ws_1",
-            "connectionId": "conn_1",
-            "adAccountId": "7011",
-            "name": "Smart",
-            "goal": "traffic",
-            "smartPlus": true
-        })))
-        .respond_with(
-            ResponseTemplate::new(201).set_body_json(serde_json::json!({"data": {
-                "id": "c1", "name": "Smart", "status": "PAUSED"
-            }})),
-        )
-        .expect(1)
-        .mount(&server)
-        .await;
-
     let client = client(&server).await;
     client
         .ads()
@@ -129,15 +109,6 @@ async fn a_spark_ad_and_a_smart_plus_campaign_carry_their_own_field() {
                 "",
             )
             .spark_post_id("item_99"),
-        )
-        .await
-        .unwrap();
-
-    client
-        .ads()
-        .create_campaign(
-            &CreateCampaign::new("ws_1", "conn_1", "7011", "Smart", AdGoal::Traffic)
-                .smart_plus(true),
         )
         .await
         .unwrap();

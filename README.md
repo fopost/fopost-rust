@@ -98,10 +98,10 @@ workspace answers `403`.
 | `broadcasts()` | `list`, `get`, `create`, `update`, `delete`, `send`, `cancel`, `recipients` |
 | `sequences()` | `list`, `get`, `create`, `update`, `delete`, `enroll`, `unenroll`, `enrollments` |
 | `inbox()` | `list`, `threads`, `conversations`, `unread_count`, `accounts`, `platforms`, `mark_thread_read`, `resolve`, `refresh`, `update`, `edit_comment`, `reply`, `reply_with`, `hide`, `unhide`, `delete`, `like`, `unlike`, `repost`, `unrepost`, `bookmark`, `unbookmark`, `vote`, `pin`, `unpin`, `react`, `start_conversation`, `set_typing`, `handover`, `approvals`, `approve_reply`, `reject_reply`, `get_x_post`, `search_x_posts` |
-| `ads()` | `list`, `external`, `boostable`, `connections`, `sources`, `authorize_meta`, `delete_connection`, `boost`, `create`, `refresh`, `set_status`, `delete`, `audiences`, `create_audience`, `search_targeting`, `lead_forms`, `create_lead_form`, `leads`, `tree`, `create_campaign`, `campaign`, `update_campaign`, `delete_campaign`, `duplicate_campaign`, `create_ad_set`, `ad_set`, `update_ad_set`, `delete_ad_set`, `duplicate_ad_set`, `create_network_ad`, `network_ad`, `update_network_ad`, `delete_network_ad`, `duplicate_network_ad`, `set_statuses`, `creatives`, `create_creative`, `creative`, `delete_creative`, `audience`, `update_audience`, `delete_audience`, `add_audience_users`, `estimate_reach`, `insights`, `ad_insights`, `lead_form`, `archive_lead_form`, `leads_feed`, `lead_pages`, `subscribe_lead_page`, `unsubscribe_lead_page`, `goals`, `catalogs`, `create_catalog`, `catalog`, `update_catalog`, `delete_catalog`, `catalog_products`, `write_catalog_products`, `product_feeds`, `create_product_feed`, `delete_product_feed`, `feed_uploads`, `start_feed_upload`, `product_sets`, `create_product_set`, `update_product_set`, `delete_product_set`, `reach_frequency`, `create_reach_frequency`, `reach_frequency_prediction`, `reserve_reach_frequency`, `cancel_reach_frequency`, `library`, `partnership_creators`, `request_partnership`, `revoke_partnership`, `account_activity`, `labels`, `create_label`, `update_label`, `delete_label`, `apply_label`, `studies`, `create_study`, `study`, `delete_study`, `ios_campaign_limits`, `high_demand_periods`, `create_high_demand_period`, `delete_high_demand_period`, `value_rule_sets`, `create_value_rule_set`, `delete_value_rule_set` |
+| `ads()` | `list`, `external`, `boostable`, `connections`, `sources`, `authorize_meta`, `delete_connection`, `boost`, `create`, `refresh`, `set_status`, `delete`, `audiences`, `create_audience`, `search_targeting`, `lead_forms`, `create_lead_form`, `leads`, `set_statuses`, `audience`, `update_audience`, `delete_audience`, `add_audience_users`, `estimate_reach`, `insights`, `ad_insights`, `lead_form`, `archive_lead_form`, `leads_feed`, `lead_pages`, `subscribe_lead_page`, `unsubscribe_lead_page`, `goals`, `reach_frequency`, `create_reach_frequency`, `reach_frequency_prediction`, `reserve_reach_frequency`, `cancel_reach_frequency`, `partnership_creators`, `request_partnership`, `revoke_partnership`, `account_activity`, `labels`, `create_label`, `update_label`, `delete_label`, `apply_label`, `studies`, `create_study`, `study`, `delete_study`, `ios_campaign_limits`, `high_demand_periods`, `create_high_demand_period`, `delete_high_demand_period`, `value_rule_sets`, `create_value_rule_set`, `delete_value_rule_set` |
 | `knowledge()` | `list`, `create`, `update`, `delete`, `sync`, `search` |
 | `inbox()` | `list`, `threads`, `conversations`, `unread_count`, `accounts`, `platforms`, `mark_thread_read`, `resolve`, `refresh`, `update`, `edit_comment`, `reply`, `reply_with`, `hide`, `unhide`, `delete`, `like`, `unlike`, `repost`, `unrepost`, `bookmark`, `unbookmark`, `vote`, `pin`, `unpin`, `react`, `start_conversation`, `set_typing`, `approvals`, `approve_reply`, `reject_reply`, `get_x_post`, `search_x_posts` |
-| `ads()` | `list`, `external`, `boostable`, `connections`, `sources`, `providers`, `authorize`, `delete_connection`, `boost`, `create`, `refresh`, `set_status`, `delete`, `audiences`, `create_audience`, `search_targeting`, `lead_forms`, `create_lead_form`, `leads`, `tree`, `create_campaign`, `campaign`, `update_campaign`, `delete_campaign`, `duplicate_campaign`, `create_ad_set`, `ad_set`, `update_ad_set`, `delete_ad_set`, `duplicate_ad_set`, `create_network_ad`, `network_ad`, `update_network_ad`, `delete_network_ad`, `duplicate_network_ad`, `set_statuses`, `creatives`, `create_creative`, `creative`, `delete_creative`, `audience`, `update_audience`, `delete_audience`, `add_audience_users`, `add_audience_companies`, `estimate_reach`, `insights`, `ad_insights`, `lead_form`, `archive_lead_form`, `leads_feed`, `lead_pages`, `subscribe_lead_page`, `unsubscribe_lead_page`, `bid_pricing`, `supply_forecast`, `conversion_rules`, `create_conversion_rule`, `conversion_rule`, `update_conversion_rule`, `delete_conversion_rule`, `attach_conversion_rule`, `detach_conversion_rule`, `conversion_metrics`, `send_conversion_events`, `upload_conversions`, `send_conversions`, `conversion_batches`, `pixels`, `create_pixel`, `pixel`, `update_pixel`, `share_pixel`, `pixel_stats`, `event_match_quality`, `custom_conversions`, `create_custom_conversion`, `custom_conversion`, `update_custom_conversion`, `delete_custom_conversion` |
+| `ads()` | `list`, `external`, `boostable`, `connections`, `sources`, `providers`, `authorize`, `delete_connection`, `boost`, `create`, `refresh`, `set_status`, `delete`, `audiences`, `create_audience`, `search_targeting`, `lead_forms`, `create_lead_form`, `leads`, `set_statuses`, `audience`, `update_audience`, `delete_audience`, `add_audience_users`, `add_audience_companies`, `estimate_reach`, `insights`, `ad_insights`, `lead_form`, `archive_lead_form`, `leads_feed`, `lead_pages`, `subscribe_lead_page`, `unsubscribe_lead_page`, `bid_pricing`, `supply_forecast`, `conversion_rules`, `create_conversion_rule`, `conversion_rule`, `update_conversion_rule`, `delete_conversion_rule`, `attach_conversion_rule`, `detach_conversion_rule`, `conversion_metrics`, `send_conversion_events`, `upload_conversions`, `send_conversions`, `conversion_batches`, `pixels`, `create_pixel`, `pixel`, `update_pixel`, `share_pixel`, `pixel_stats`, `event_match_quality`, `custom_conversions`, `create_custom_conversion`, `custom_conversion`, `update_custom_conversion`, `delete_custom_conversion` |
 | `google_business()` | `get_location`, `update_location`, `get_attributes`, `update_attributes`, `get_menus`, `replace_menus`, `get_services`, `replace_services`, `list_media`, `add_media`, `delete_media`, `list_place_actions`, `create_place_action`, `update_place_action`, `delete_place_action`, `get_verification_options`, `start_verification`, `complete_verification`, `get_performance`, `get_search_keywords`, `assign` |
 | `validate()` | `post`, `length`, `media`, `subreddit` |
 | `whatsapp()` | `profile`, `update_profile`, `request_display_name`, `set_username`, `templates`, `template_library`, `template`, `create_template`, `import_template`, `update_template`, `delete_template`, `groups`, `create_group`, `group`, `update_group`, `delete_group`, `group_invite_link`, `reset_group_invite_link`, `remove_group_participants`, `blocked`, `block_users`, `unblock_users`, `commerce_settings`, `update_commerce_settings`, `link_catalog`, `flows`, `flow`, `create_flow`, `update_flow`, `delete_flow`, `upload_flow_json`, `publish_flow`, `deprecate_flow`, `flow_responses`, `encryption_key_status`, `set_encryption_key`, `account_events`, `sandbox_sessions`, `create_sandbox_session` |
@@ -112,7 +112,7 @@ workspace answers `403`.
 | `logs()` | `list` |
 
 `account_groups()` needs the `accounts` scope. `inbox()`, `knowledge()`, `contacts()`, `broadcasts()` and `sequences()` need the `inbox` scope (and `publish` on `broadcasts().send`/`cancel` and `sequences().enroll`/`unenroll`, which reach a platform), except `contacts().conversation_analytics`, which needs `analytics` and `ads()` the `ads` scope; `boost`, `create`, `set_status`,
-`delete`, `set_statuses` and every create, update, delete and duplicate on campaigns, ad sets and network ads
+`delete` and `set_statuses`
 on `ads()` spend money and also need `publish`. On `inbox()`, `edit_comment`, `like`, `unlike`, `repost`, `unrepost`, `bookmark`, `unbookmark`, `vote`, `pin`,
 `unpin`, `react`, `start_conversation`, `set_typing`, `handover`, a `reply_with` carrying media or quick replies,
 and deleting our own reply also need `publish`, as do `accounts().follow_x_user` and `unfollow_x_user`. `inbox().get_x_post` and
@@ -418,32 +418,27 @@ MIT. See [LICENSE](LICENSE).
 
 ### Google Ads
 
-Campaigns, ad groups, ads, audiences and insights are on `client.ads()` and dispatch by
-connection. What only Google has is on `client.google_ads()`:
+Ads, audiences and insights are on `client.ads()` and dispatch by connection. What only
+Google has is on `client.google_ads()`:
 
 ```rust,no_run
-use fopost::models::{CreateGoogleKeyword, GoogleMatchType, GoogleScope};
+use fopost::models::{GoogleQuery, GoogleScope};
 
 # async fn run(client: fopost::Client) -> fopost::Result<()> {
 let scope = GoogleScope::new("c4d5e6f7-…", "1234567890");
-let keywords = client.google_ads().keywords(&scope, None).await?;
+let strategies = client.google_ads().bid_strategies(&scope).await?;
 
-client
+let result = client
     .google_ads()
-    .create_keyword(&CreateGoogleKeyword {
-        scope: scope.clone().in_workspace("7d2b8c11-…"),
-        ad_group_id: "1234567890~adGroup~77".into(),
-        text: "running shoes".into(),
-        match_type: GoogleMatchType::Exact,
-        cpc_bid_minor: None,
+    .query(&GoogleQuery {
+        scope: scope.clone(),
+        query: "SELECT campaign.id, metrics.clicks FROM campaign".into(),
     })
     .await?;
 # Ok(())
 # }
 ```
 
-Also `keyword_ideas`, `keyword_metrics`, `search_terms`, `bid_strategies`, `ad_schedule`
-and `set_ad_schedule`, the negative keyword lists, `assets` and `asset_groups`,
-`local_services_leads`, the conversion methods, and `query` for a raw read-only GAQL
-SELECT. Changes need the `publish` scope as well as `ads`; `customer_id` has to name an
-account the connection's grant reaches.
+Also `create_bid_strategy`, `ad_schedule` and `set_ad_schedule`, `local_services_leads`,
+and the conversion methods. Changes need the `publish` scope as well as `ads`;
+`customer_id` has to name an account the connection's grant reaches.
