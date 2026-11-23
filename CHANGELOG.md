@@ -67,6 +67,21 @@ All notable changes to the `fopost` crate are documented here.
   test, destinations, keywords, articles), with every `Blog*` model and parameter type and the
   `WebhookEvent::ArticlePublished` and `WebhookEvent::ArticleTest` variants. Articles are
   ordinary posts now; `blogs()` (remote articles on a connected site) is unchanged.
+- On `ads()`: the account tree (`tree`), the campaign, ad set and network ad calls
+  (`create_campaign`, `campaign`, `update_campaign`, `delete_campaign`, `duplicate_campaign`,
+  `create_ad_set`, `ad_set`, `update_ad_set`, `delete_ad_set`, `duplicate_ad_set`,
+  `create_network_ad`, `network_ad`, `update_network_ad`, `delete_network_ad`,
+  `duplicate_network_ad`), the creative library (`creatives`, `create_creative`, `creative`,
+  `delete_creative`), product catalogs with their products, feeds and product sets, and the Ad
+  Library (`library`), with their models. The API no longer serves these endpoints. Boosts,
+  standalone ads (`/ads/{id}`), `set_statuses`, audiences, lead forms and insights are
+  unchanged, and `CreateAd` still takes `product_set_id` for the `Sales` goal.
+- On `google_ads()`: keywords, keyword ideas and metrics, search terms, negative keyword lists,
+  assets, Performance Max asset groups, recommendations and the optimization score, with their
+  models. Bid strategies, the ad schedule, Local Services leads, conversions and `query` are
+  unchanged.
+- `ads().providers()` no longer reports the `creatives`, `catalogs`, `adLibrary` and
+  `smartPlus` capabilities.
 
 ## 0.4.0 - 2026-10-18
 
