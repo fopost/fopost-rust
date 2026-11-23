@@ -161,8 +161,8 @@ impl Client {
         Ads { http: &self.http }
     }
 
-    /// Google Ads only: keywords, assets, conversions and raw GAQL. Campaigns,
-    /// ad groups, ads, audiences and insights are on [`Client::ads`].
+    /// Google Ads only: bid strategies, the ad schedule, conversions and raw
+    /// GAQL. Ads, audiences and insights are on [`Client::ads`].
     pub fn google_ads(&self) -> GoogleAds<'_> {
         GoogleAds { http: &self.http }
     }
