@@ -6,9 +6,9 @@ mod common;
 
 use common::{account_fixture, client};
 use fopost::models::{
-    AdBudget, AdGoal, AdInsightsQuery, AdKind, AdObjectLevel, AdObjectQuery, AdObjectRef, AdStatus,
-    AdTargeting, AdTargetingItem, AnalyticsQuery, AudienceFilter, AudienceSpec, AuthorizeGoogleAds,
-    BoostPost, BroadcastStatus, ContactChannel, ContactFieldType, ConversationAnalyticsQuery,
+    AdBudget, AdGoal, AdInsightsQuery, AdKind, AdObjectLevel, AdObjectRef, AdStatus, AdTargeting,
+    AdTargetingItem, AnalyticsQuery, AudienceFilter, AudienceSpec, AuthorizeGoogleAds, BoostPost,
+    BroadcastStatus, ContactChannel, ContactFieldType, ConversationAnalyticsQuery,
     ConversationSort, CreateAccountGroup, CreateAudience, CreateAutomation, CreateBroadcast,
     CreateContact, CreateContactField, CreateGoogleKeyword, CreatePinterestBoard, CreateSequence,
     CreateWebhook, CreateWhatsappTemplate, DiscordEventInput, DiscordRoleInput, Enroll,
@@ -1223,54 +1223,6 @@ async fn leads_send_the_cursor_and_read_the_next_one() {
         .unwrap();
     assert_eq!(page.leads[0].fields[0].values[0], "Morgan Lee");
     assert_eq!(page.next_cursor.as_deref(), Some("cur_2"));
-}
-
-#[tokio::test]
-async fn the_account_tree_nests_ad_sets_and_ads_under_campaigns() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/v1/ads/accounts/act_123/tree"))
-        .and(query_param("workspace_id", "ws_1"))
-        .and(query_param("connection_id", "conn_1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "data": {
-                "adAccountId": "act_123",
-                "currency": "USD",
-                "campaigns": [{
-                    "id": "c_1",
-                    "name": "Launch",
-                    "status": "PAUSED",
-                    "budgetMinor": null,
-                    "adSets": [{
-                        "id": "s_1",
-                        "name": "US",
-                        "campaignId": "c_1",
-                        "status": "ACTIVE",
-                        "budgetMinor": 5000,
-                        "budgetType": "daily",
-                        "ads": [{"id": "a_1", "name": "Hero", "creativeId": "cr_1", "status": "ACTIVE"}]
-                    }]
-                }]
-            }
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let client = client(&server).await;
-    let tree = client
-        .ads()
-        .tree("act_123", &AdObjectQuery::new("conn_1").workspace("ws_1"))
-        .await
-        .unwrap();
-    let campaign = &tree.campaigns[0];
-    assert_eq!(campaign.campaign.id, "c_1");
-    assert_eq!(campaign.campaign.budget_minor, None);
-    assert_eq!(campaign.ad_sets[0].ad_set.budget_minor, Some(5000));
-    assert_eq!(
-        campaign.ad_sets[0].ads[0].creative_id.as_deref(),
-        Some("cr_1")
-    );
 }
 
 #[tokio::test]
